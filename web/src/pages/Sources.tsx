@@ -39,9 +39,9 @@ export default function Sources() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Sources</h2>
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Sources</h2>
           <p className="text-muted-foreground">Manage media sources</p>
         </div>
         <Button onClick={() => { setShowForm(true) }}>
@@ -108,7 +108,7 @@ export default function Sources() {
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {isLoading ? (
           Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
@@ -123,12 +123,12 @@ export default function Sources() {
           <Card key={source.id}>
             <CardHeader>
               <CardTitle className="text-lg">{source.type}</CardTitle>
-              <p className="text-sm text-muted-foreground">Channel #{source.channel_id} &middot; {source.stream_type?.replace('_', ' + ') || 'auto-detect'}</p>
+              <p className="text-sm text-muted-foreground truncate">Channel #{source.channel_id} &middot; {source.stream_type?.replace('_', ' + ') || 'auto-detect'}</p>
             </CardHeader>
             <CardContent>
               <p className="text-sm font-mono bg-muted rounded p-2 mb-4 truncate">{source.url}</p>
-              <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(source.id)}>
-                <Trash2 className="h-3 w-3 text-destructive" />
+              <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={() => deleteMutation.mutate(source.id)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </CardContent>
           </Card>

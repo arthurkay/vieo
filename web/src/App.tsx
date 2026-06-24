@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import Sidebar from './components/Sidebar'
+import Sidebar, { SidebarToggle } from './components/Sidebar'
 import StorageBanner from './components/storage-banner'
 import Dashboard from './pages/Dashboard'
 import Channels from './pages/Channels'
@@ -9,10 +10,13 @@ import Jobs from './pages/Jobs'
 import Player from './pages/Player'
 
 export default function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
   return (
     <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <SidebarToggle onClick={() => setSidebarOpen(true)} />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <StorageBanner />
         <Routes>
           <Route path="/player/:outputId" element={
@@ -21,7 +25,7 @@ export default function App() {
             </div>
           } />
           <Route path="*" element={
-            <main className="flex-1 overflow-y-auto p-6">
+            <main className="flex-1 overflow-y-auto p-4 md:p-6">
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/channels" element={<Channels />} />

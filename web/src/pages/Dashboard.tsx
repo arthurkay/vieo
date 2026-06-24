@@ -19,7 +19,7 @@ export default function Dashboard() {
   const failed = jobs?.filter((j) => j.status === 'failed').length || 0
   const paused = jobs?.filter((j) => j.status === 'paused').length || 0
 
-  const liveJobs = jobs?.filter((j) => (j.status === 'paused' ||j.status === 'completed' ||j.status === 'stopped' || j.status === 'running') && j.output_id) || []
+  const liveJobs = jobs?.filter((j) => (j.status === 'stopped' ||j.status === 'paused' ||j.status === 'completed' || j.status === 'running') && j.output_id) || []
 
   const stats = [
     { label: 'Channels', value: channels?.length || 0, icon: Radio, color: 'text-blue-600' },
@@ -51,11 +51,11 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Dashboard</h2>
         <p className="text-muted-foreground">Overview of your streaming platform</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
         {stats.map((stat) => (
           <Card key={stat.label}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -74,11 +74,11 @@ export default function Dashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Play className="h-4 w-4" />
-              Live Streams
+              Vieo Streams
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
               {liveJobs.map((job) => (
                 <div key={job.id} className="border rounded-lg p-3">
                   <div className="flex items-center justify-between mb-2">
@@ -86,8 +86,11 @@ export default function Dashboard() {
                     <span className="text-xs text-muted-foreground">Source #{job.source_id}</span>
                   </div>
                   <div
-                    className="aspect-video bg-black rounded-md relative overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+                    className="aspect-video bg-black rounded-md relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => navigate(`/player/${job.output_id}`)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/player/${job.output_id}`) }}
                   >
                     <img
                       src={`/api/stream/${job.output_id}/thumb.jpg`}
@@ -115,7 +118,7 @@ export default function Dashboard() {
             <div className="space-y-2">
               {jobs.slice(0, 5).map((job) => (
                 <div key={job.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                  <div>
+                  <div className="min-w-0">
                     <span className="font-medium">Job #{job.id}</span>
                     <span className="text-muted-foreground ml-2">
                       Source #{job.source_id}

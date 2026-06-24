@@ -75,13 +75,13 @@ export default function Jobs() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Jobs</h2>
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Jobs</h2>
           <p className="text-muted-foreground">Monitor transcoding jobs</p>
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -157,44 +157,44 @@ function JobCard({
   return (
     <Card>
       <CardContent className="py-4">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-3">
-            <span className="font-medium">Job #{job.id}</span>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-medium shrink-0">Job #{job.id}</span>
             <Badge variant={job.status as 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'}>{job.status}</Badge>
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1 shrink-0">
             {canPlay && (
-              <Button variant="ghost" size="sm" onClick={() => navigate(`/player/${job.output_id}`)} title="Play">
-                <Play className="h-3 w-3" />
+              <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={() => navigate(`/player/${job.output_id}`)} title="Play">
+                <Play className="h-4 w-4" />
               </Button>
             )}
             {isRunning && (
-              <Button variant="ghost" size="sm" onClick={onPause} title="Pause">
-                <Pause className="h-3 w-3" />
+              <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={onPause} title="Pause">
+                <Pause className="h-4 w-4" />
               </Button>
             )}
             {isPaused && (
-              <Button variant="ghost" size="sm" onClick={onResume} title="Resume">
-                <PlayCircle className="h-3 w-3" />
+              <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={onResume} title="Resume">
+                <PlayCircle className="h-4 w-4" />
               </Button>
             )}
             {isActive && (
-              <Button variant="ghost" size="sm" onClick={onStop} title="Stop">
-                <StopCircle className="h-3 w-3" />
+              <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={onStop} title="Stop">
+                <StopCircle className="h-4 w-4" />
               </Button>
             )}
             {canRetry && (
-              <Button variant="ghost" size="sm" onClick={onRetry} title="Retry">
-                <RotateCcw className="h-3 w-3" />
+              <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={onRetry} title="Retry">
+                <RotateCcw className="h-4 w-4" />
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={onDelete} title="Delete">
-              <Trash2 className="h-3 w-3 text-destructive" />
+            <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={onDelete} title="Delete">
+              <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 text-sm text-muted-foreground mb-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4 text-sm text-muted-foreground mb-2">
           <div>Source #{job.source_id}</div>
           <div>Output #{job.output_id}</div>
           <div>{new Date(job.created_at).toLocaleString()}</div>
@@ -203,7 +203,7 @@ function JobCard({
         {(isRunning || isPaused) && <Progress value={job.progress * 100} className="h-2" />}
 
         {job.error_msg && (
-          <p className="text-sm text-destructive mt-2">{job.error_msg}</p>
+          <p className="text-sm text-destructive mt-2 break-all">{job.error_msg}</p>
         )}
       </CardContent>
     </Card>

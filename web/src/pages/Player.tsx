@@ -28,21 +28,22 @@ export default function Player() {
 
   return (
     <div className="h-full flex flex-col bg-background">
-      <div className="flex items-center gap-4 p-4 border-b shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back
+      <div className="flex items-center gap-2 sm:gap-4 p-3 sm:p-4 border-b shrink-0">
+        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="min-h-9 shrink-0">
+          <ArrowLeft className="h-4 w-4 sm:mr-1" />
+          <span className="hidden sm:inline">Back</span>
         </Button>
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold">Stream Player</h1>
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <h1 className="text-base sm:text-lg font-semibold truncate">Stream Player</h1>
           {jobStatus && <Badge variant={jobStatus as 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'}>{jobStatus}</Badge>}
         </div>
       </div>
-      <div className="flex-1 p-4 min-h-0">
+      <div className="flex-1 p-2 sm:p-4 min-h-0">
         <VideoPlayer
           streamUrl={`/api/stream/${id}/playlist.m3u8`}
           posterUrl={`/api/stream/${id}/thumb.jpg`}
           isLive={isLive}
-          className="w-full h-full max-h-[calc(100vh-8rem)]"
+          className="w-full h-full max-h-[calc(100vh-5rem)] sm:max-h-[calc(100vh-8rem)]"
         />
       </div>
     </div>

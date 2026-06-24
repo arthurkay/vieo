@@ -68,9 +68,9 @@ export default function Channels() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Channels</h2>
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Channels</h2>
           <p className="text-muted-foreground">Manage your content channels</p>
         </div>
         <Button onClick={() => { resetForm(); setShowForm(true) }}>
@@ -106,26 +106,26 @@ export default function Channels() {
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {channels?.map((ch) => (
           <Card key={ch.id}>
             <CardHeader>
               <CardTitle className="text-lg">{ch.name}</CardTitle>
-              <p className="text-sm text-muted-foreground">{ch.slug}</p>
+              <p className="text-sm text-muted-foreground truncate">{ch.slug}</p>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">{ch.description || 'No description'}</p>
+              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{ch.description || 'No description'}</p>
               <div className="flex gap-2">
                 <Link to={`/channels/${ch.id}`}>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" className="min-h-9">
                     <ExternalLink className="h-3 w-3 mr-1" /> View
                   </Button>
                 </Link>
-                <Button variant="ghost" size="sm" onClick={() => startEdit(ch)}>
-                  <Edit2 className="h-3 w-3" />
+                <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={() => startEdit(ch)}>
+                  <Edit2 className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(ch.id)}>
-                  <Trash2 className="h-3 w-3 text-destructive" />
+                <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={() => deleteMutation.mutate(ch.id)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               </div>
             </CardContent>

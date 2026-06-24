@@ -72,7 +72,7 @@ export default function ChannelDetail() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">{channel?.name || 'Channel'}</h2>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">{channel?.name || 'Channel'}</h2>
         <p className="text-muted-foreground">{channel?.description}</p>
       </div>
 
@@ -90,12 +90,12 @@ export default function ChannelDetail() {
                 e.preventDefault()
                 createSourceMutation.mutate({ channel_id: channelId, type: sourceType, url: sourceUrl })
               }}
-              className="flex flex-wrap gap-2 mb-4 items-end"
+              className="flex flex-col sm:flex-row gap-2 mb-4"
             >
-              <div className="space-y-1">
+              <div className="space-y-1 shrink-0">
                 <Label className="text-xs">Type</Label>
                 <Select value={sourceType} onValueChange={(v) => setSourceType(v as Source['type'])}>
-                  <SelectTrigger className="w-32">
+                  <SelectTrigger className="w-full sm:w-32">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -107,7 +107,7 @@ export default function ChannelDetail() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1 flex-1 min-w-[200px]">
+              <div className="space-y-1 flex-1 min-w-0">
                 <Label className="text-xs">URL</Label>
                 <Input
                   placeholder="URL or file path"
@@ -116,7 +116,7 @@ export default function ChannelDetail() {
                   required
                 />
               </div>
-              <Button type="submit" className="mt-auto">Add</Button>
+              <Button type="submit" className="mt-auto sm:self-end">Add</Button>
             </form>
           )}
 
@@ -135,14 +135,14 @@ export default function ChannelDetail() {
                 const isPaused = job?.status === 'paused'
                 const isStopped = job?.status === 'stopped'
                 const isCompleted = job?.status === 'completed'
-                const canPreview = isRunning || isCompleted || isPaused || isStopped
+                const canPreview = isRunning || isCompleted || isStopped || isPaused
 
                 return (
                   <div key={source.id} className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="min-w-0">
                         <span className="font-medium">{source.type}</span>
-                        <span className="text-muted-foreground ml-2 text-sm">{source.url}</span>
+                        <span className="text-muted-foreground ml-2 text-sm break-all line-clamp-2">{source.url}</span>
                       </div>
                       {job && <Badge variant={job.status as 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'}>{job.status}</Badge>}
                     </div>
@@ -151,6 +151,7 @@ export default function ChannelDetail() {
                       <Button
                         size="sm"
                         variant="outline"
+                        className="min-h-9"
                         onClick={async () => {
                           const newOutput = await api.outputs.create({
                             source_id: source.id,
@@ -166,8 +167,8 @@ export default function ChannelDetail() {
                     )}
 
                     {canPreview && output && (
-                      <div className="mt-2 flex items-center gap-3">
-                        <div className="w-32 aspect-video bg-black rounded overflow-hidden relative shrink-0">
+                      <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div className="w-full sm:w-32 aspect-video bg-black rounded overflow-hidden relative shrink-0">
                           <img
                             src={`/api/stream/${output.id}/thumb.jpg`}
                             alt=""
@@ -181,6 +182,7 @@ export default function ChannelDetail() {
                         <Button
                           variant="outline"
                           size="sm"
+                          className="min-h-9"
                           onClick={() => navigate(`/player/${output.id}`)}
                         >
                           <Play className="h-3 w-3 mr-1" /> View Stream
