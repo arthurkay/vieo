@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vieo — User Guide</title>
+<style>
+  @page { margin: 2cm; size: A4; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1a1a2e; max-width: 800px; margin: 0 auto; padding: 2rem; }
+  h1 { font-size: 2rem; margin-bottom: 0.25rem; color: #0f172a; }
+  .subtitle { color: #64748b; font-size: 1.1rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.4rem; color: #0f172a; margin-top: 2rem; margin-bottom: 0.75rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.35rem; }
+  h3 { font-size: 1.1rem; color: #334155; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+  p { margin-bottom: 0.75rem; }
+  ul, ol { margin-left: 1.5rem; margin-bottom: 0.75rem; }
+  li { margin-bottom: 0.35rem; }
+  .step { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 1rem 1.25rem; margin-bottom: 1rem; border-radius: 0 6px 6px 0; }
+  .step-num { display: inline-block; background: #3b82f6; color: white; width: 28px; height: 28px; text-align: center; line-height: 28px; border-radius: 50%; font-weight: bold; font-size: 0.85rem; margin-right: 0.5rem; }
+  .tip { background: #f0fdf4; border-left: 4px solid #22c55e; padding: 0.75rem 1rem; margin-bottom: 1rem; border-radius: 0 6px 6px 0; font-size: 0.95rem; }
+  .warn { background: #fefce8; border-left: 4px solid #eab308; padding: 0.75rem 1rem; margin-bottom: 1rem; border-radius: 0 6px 6px 0; font-size: 0.95rem; }
+  .info { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 0.75rem 1rem; margin-bottom: 1rem; border-radius: 0 6px 6px 0; font-size: 0.95rem; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.95rem; }
+  th, td { border: 1px solid #e2e8f0; padding: 0.5rem 0.75rem; text-align: left; }
+  th { background: #f1f5f9; font-weight: 600; }
+  code { background: #f1f5f9; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.9em; font-family: 'SF Mono', Consolas, monospace; }
+  .toc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+  .toc h3 { margin-top: 0; margin-bottom: 0.5rem; }
+  .toc ol { margin-left: 1.25rem; margin-bottom: 0; }
+  .toc li { margin-bottom: 0.2rem; }
+  .toc a { color: #3b82f6; text-decoration: none; }
+  .screenshot { background: #1e293b; color: #94a3b8; border-radius: 8px; padding: 2rem; text-align: center; margin: 1rem 0; font-size: 0.9rem; border: 1px solid #334155; }
+  @media print { body { padding: 0; } .page-break { page-break-before: always; } }
+</style>
+</head>
+<body>
+
+<h1>vieo</h1>
+<p class="subtitle">Video Streaming Platform — User Guide</p>
+
+<div class="toc">
+  <h3>Contents</h3>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#getting-started">Getting Started</a></li>
+    <li><a href="#channels">Managing Channels</a></li>
+    <li><a href="#sources">Adding Sources</a></li>
+    <li><a href="#transcoding">Transcoding Streams</a></li>
+    <li><a href="#player">Watching Streams</a></li>
+    <li><a href="#jobs">Managing Jobs</a></li>
+    <li><a href="#dashboard">Dashboard</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+  </ol>
+</div>
+
+<h2 id="overview">1. Overview</h2>
+<p>vieo is a self-hosted video streaming platform that takes your media sources (files, URLs, live streams) and converts them into web-friendly HLS format for playback in any modern browser.</p>
+
+<h3>What can vieo do?</h3>
+<ul>
+  <li><strong>Transcode video files</strong> — Convert MP4, MKV, and other formats to adaptive HLS streaming</li>
+  <li><strong>Stream live sources</strong> — Ingest RTMP, RTSP, and HLS streams and make them playable in the browser</li>
+  <li><strong>Live preview</strong> — Watch streams in real-time as they are being transcoded</li>
+  <li><strong>Organize with channels</strong> — Group related streams into channels for easy management</li>
+  <li><strong>Monitor everything</strong> — Real-time progress tracking, disk usage monitoring, and job management</li>
+</ul>
+
+<h3>Supported input types</h3>
+<table>
+  <tr><th>Type</th><th>Description</th><th>Example</th></tr>
+  <tr><td><strong>File / URL</strong></td><td>Local files or remote HTTP URLs</td><td><code>/path/to/video.mp4</code>, <code>https://example.com/video.mkv</code></td></tr>
+  <tr><td><strong>HLS</strong></td><td>HLS master playlists</td><td><code>https://example.com/stream/master.m3u8</code></td></tr>
+  <tr><td><strong>RTMP</strong></td><td>RTMP live streams</td><td><code>rtmp://server/live/stream_key</code></td></tr>
+  <tr><td><strong>RTSP</strong></td><td>RTSP camera/network streams</td><td><code>rtsp://192.168.1.100:554/stream</code></td></tr>
+  <tr><td><strong>Device</strong></td><td>Local capture devices</td><td><code>/dev/video0</code></td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2 id="getting-started">2. Getting Started</h2>
+
+<div class="step">
+  <span class="step-num">1</span> <strong>Open vieo in your browser</strong><br>
+  Navigate to <code>http://localhost:8080</code> (or the address your administrator configured).
+</div>
+
+<div class="step">
+  <span class="step-num">2</span> <strong>Create your first channel</strong><br>
+  Go to <strong>Channels</strong> in the sidebar and click <strong>New Channel</strong>. Give it a name (e.g., "My Streams") and an optional description.
+</div>
+
+<div class="step">
+  <span class="step-num">3</span> <strong>Add a source</strong><br>
+  Open your channel and click <strong>Add Source</strong>. Select the source type and enter the URL or file path.
+</div>
+
+<div class="step">
+  <span class="step-num">4</span> <strong>Start transcoding</strong><br>
+  Click <strong>Start Transcoding</strong> on your source. The job will appear on the <strong>Jobs</strong> page with a real-time progress bar.
+</div>
+
+<div class="step">
+  <span class="step-num">5</span> <strong>Watch your stream</strong><br>
+  Once transcoding starts, click the <strong>Play</strong> button on the job to open the player. You can watch while transcoding is still in progress.
+</div>
+
+<div class="tip">
+  <strong>Tip:</strong> The player works while transcoding is running — you don't need to wait for it to finish. Early segments become available within seconds.
+</div>
+
+<div class="page-break"></div>
+
+<h2 id="channels">3. Managing Channels</h2>
+
+<p>Channels are organizational containers for your media sources. Think of them as folders or categories.</p>
+
+<h3>Creating a channel</h3>
+<ol>
+  <li>Click <strong>Channels</strong> in the sidebar</li>
+  <li>Click <strong>New Channel</strong></li>
+  <li>Enter a <strong>Name</strong> (required) — this is what appears in the UI</li>
+  <li>Enter a <strong>Slug</strong> (required) — a URL-friendly identifier (e.g., <code>my-streams</code>)</li>
+  <li>Enter a <strong>Description</strong> (optional)</li>
+  <li>Click <strong>Create</strong></li>
+</ol>
+
+<h3>Editing a channel</h3>
+<ol>
+  <li>Click <strong>Channels</strong> in the sidebar</li>
+  <li>Click the <strong>Edit</strong> (pencil) icon on the channel card</li>
+  <li>Modify the name, slug, or description</li>
+  <li>Click <strong>Update</strong></li>
+</ol>
+
+<h3>Deleting a channel</h3>
+<ol>
+  <li>Click <strong>Channels</strong> in the sidebar</li>
+  <li>Click the <strong>Delete</strong> (trash) icon on the channel card</li>
+</ol>
+
+<div class="warn">
+  <strong>Warning:</strong> Deleting a channel also deletes all sources, outputs, and jobs associated with it. This action cannot be undone.
+</div>
+
+<div class="page-break"></div>
+
+<h2 id="sources">4. Adding Sources</h2>
+
+<p>A source represents a media input — a file, URL, or live stream that vieo will transcode.</p>
+
+<h3>Adding a source to a channel</h3>
+<ol>
+  <li>Open a channel by clicking <strong>View</strong> on a channel card</li>
+  <li>Click <strong>Add Source</strong></li>
+  <li>Select the <strong>Type</strong>:
+    <ul>
+      <li><strong>File / URL</strong> — For local files or HTTP URLs</li>
+      <li><strong>HLS Stream</strong> — For HLS master playlists (.m3u8)</li>
+      <li><strong>RTMP</strong> — For RTMP live streams</li>
+      <li><strong>RTSP</strong> — For RTSP camera streams</li>
+      <li><strong>Device</strong> — For local capture devices</li>
+    </ul>
+  </li>
+  <li>Enter the <strong>URL or file path</strong></li>
+  <li>Click <strong>Add</strong></li>
+</ol>
+
+<div class="info">
+  <strong>Note:</strong> The stream type (audio+video, video-only, audio-only) is automatically detected when you start transcoding. You don't need to specify it manually.
+</div>
+
+<h3>Supported URL formats</h3>
+<table>
+  <tr><th>Type</th><th>Format</th><th>Example</th></tr>
+  <tr><td>HTTP file</td><td><code>https://...</code></td><td><code>https://example.com/video.mp4</code></td></tr>
+  <tr><td>Local file</td><td><code>/path/to/...</code></td><td><code>/home/user/videos/recording.mkv</code></td></tr>
+  <tr><td>HLS</td><td><code>https://...m3u8</code></td><td><code>https://example.com/stream/master.m3u8</code></td></tr>
+  <tr><td>RTMP</td><td><code>rtmp://...</code></td><td><code>rtmp://server/live/key</code></td></tr>
+  <tr><td>RTSP</td><td><code>rtsp://...</code></td><td><code>rtsp://192.168.1.100/stream</code></td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2 id="transcoding">5. Transcoding Streams</h2>
+
+<p>Transcoding converts your source media into HLS format — a sequence of small <code>.ts</code> video segments and an <code>.m3u8</code> playlist file that browsers can stream.</p>
+
+<h3>Starting a transcode</h3>
+<ol>
+  <li>Open a channel and find your source</li>
+  <li>Click <strong>Start Transcoding</strong></li>
+  <li>vieo will:
+    <ol type="a">
+      <li>Create an output directory for the HLS files</li>
+      <li>Probe the source to determine codec, duration, and stream type</li>
+      <li>Begin transcoding with ffmpeg</li>
+    </ol>
+  </li>
+  <li>The job appears on the <strong>Jobs</strong> page with a progress bar</li>
+</ol>
+
+<h3>What happens during transcoding?</h3>
+<ul>
+  <li><strong>Probing</strong> — vieo analyzes the source to detect video/audio streams, resolution, and duration</li>
+  <li><strong>Segment creation</strong> — ffmpeg splits the output into 4-second <code>.ts</code> segments</li>
+  <li><strong>Playlist updates</strong> — The <code>.m3u8</code> playlist is updated as each segment completes</li>
+  <li><strong>Progress tracking</strong> — Real-time progress is shown based on the output timestamp vs. total duration</li>
+</ul>
+
+<h3>Output format</h3>
+<table>
+  <tr><th>Property</th><th>Value</th></tr>
+  <tr><td>Container</td><td>MPEG-TS (<code>.ts</code> segments)</td></tr>
+  <tr><td>Video codec</td><td>H.264 (libx264, fast preset, CRF 23)</td></tr>
+  <tr><td>Audio codec</td><td>AAC (128kbps)</td></tr>
+  <tr><td>Segment duration</td><td>4 seconds</td></tr>
+  <tr><td>Playlist</td><td>Full list (all segments)</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2 id="player">6. Watching Streams</h2>
+
+<p>vieo includes a built-in web player powered by hls.js that works in all modern browsers.</p>
+
+<h3>Opening the player</h3>
+<ul>
+  <li><strong>From the Jobs page:</strong> Click the <strong>Play</strong> icon on any running or completed job</li>
+  <li><strong>From the Dashboard:</strong> Click on any stream thumbnail in the "Live Streams" section</li>
+  <li><strong>From Channel Detail:</strong> Click <strong>View Stream</strong> on a source with an active output</li>
+</ul>
+
+<h3>Live preview (during transcoding)</h3>
+<p>You can watch a stream while it's still being transcoded. The player automatically switches to live mode when viewing a running job:</p>
+<ul>
+  <li>The player buffers a few segments ahead and plays from the most recent content</li>
+  <li>If a segment isn't written yet, the player retries automatically</li>
+  <li>Once transcoding completes, the player switches to on-demand mode for full seeking</li>
+</ul>
+
+<div class="tip">
+  <strong>Tip:</strong> For the best live preview experience, wait at least 8-12 seconds after starting a transcode before opening the player. This allows a few segments to be written.
+</div>
+
+<h3>Player controls</h3>
+<table>
+  <tr><th>Control</th><th>Description</th></tr>
+  <tr><td>Play / Pause</td><td>Toggle playback</td></tr>
+  <tr><td>Seek bar</td><td>Jump to any point in the stream (available after transcoding completes)</td></tr>
+  <tr><td>Volume</td><td>Adjust audio volume</td></tr>
+  <tr><td>Fullscreen</td><td>Expand to fill the screen</td></tr>
+  <tr><td>Back</td><td>Return to the previous page</td></tr>
+</table>
+
+<div class="info">
+  <strong>Note:</strong> The player page is independent from the rest of the UI — navigating away from it (e.g., to check job progress) won't interrupt playback if you use the browser's back button.
+</div>
+
+<div class="page-break"></div>
+
+<h2 id="jobs">7. Managing Jobs</h2>
+
+<p>A job represents a single transcoding task — converting one source into HLS output.</p>
+
+<h3>Job statuses</h3>
+<table>
+  <tr><th>Status</th><th>Description</th><th>Actions available</th></tr>
+  <tr><td><strong>Pending</strong></td><td>Waiting for a transcoding slot</td><td>Stop, Delete</td></tr>
+  <tr><td><strong>Running</strong></td><td>Currently transcoding</td><td>Pause, Stop, Play, Delete</td></tr>
+  <tr><td><strong>Paused</strong></td><td>Temporarily suspended (disk low or manual)</td><td>Stop, Retry, Delete</td></tr>
+  <tr><td><strong>Completed</strong></td><td>Transcoding finished successfully</td><td>Play, Retry, Delete</td></tr>
+  <tr><td><strong>Failed</strong></td><td>Transcoding error occurred</td><td>Retry, Delete</td></tr>
+  <tr><td><strong>Stopped</strong></td><td>Manually stopped by user</td><td>Retry, Delete</td></tr>
+</table>
+
+<h3>Job actions</h3>
+<ul>
+  <li><strong>Pause</strong> — Temporarily suspends transcoding. The job can be resumed later from where it left off.</li>
+  <li><strong>Stop</strong> — Stops the job permanently. The output is kept but marked as stopped.</li>
+  <li><strong>Retry</strong> — Restarts the job from the beginning. Existing output files are cleaned before restarting.</li>
+  <li><strong>Delete</strong> — Removes the job record from the database.</li>
+</ul>
+
+<h3>Filtering jobs</h3>
+<p>Use the status dropdown at the top of the Jobs page to filter by status (e.g., show only "Running" jobs).</p>
+
+<h3>Progress tracking</h3>
+<p>Running and paused jobs display a progress bar showing the current transcoding progress as a percentage. Progress is updated in real-time via WebSocket.</p>
+
+<div class="page-break"></div>
+
+<h2 id="dashboard">8. Dashboard</h2>
+
+<p>The Dashboard provides an overview of your streaming platform at a glance.</p>
+
+<h3>Statistics cards</h3>
+<table>
+  <tr><th>Card</th><th>Description</th></tr>
+  <tr><td>Channels</td><td>Total number of channels</td></tr>
+  <tr><td>Sources</td><td>Total number of media sources</td></tr>
+  <tr><td>Running Jobs</td><td>Currently active transcoding jobs</td></tr>
+  <tr><td>Completed</td><td>Successfully completed jobs</td></tr>
+  <tr><td>Failed</td><td>Jobs that encountered errors</td></tr>
+  <tr><td>Paused</td><td>Jobs paused due to disk issues or manual action</td></tr>
+</table>
+
+<h3>Live Streams</h3>
+<p>Shows thumbnails for all running and completed streams. Click any thumbnail to open the player.</p>
+
+<h3>Recent Jobs</h3>
+<p>A list of the 5 most recent jobs with their status badges.</p>
+
+<h3>Storage Banner</h3>
+<p>If disk usage exceeds the warning threshold, a banner appears at the top of every page showing the current usage and free space.</p>
+
+<div class="page-break"></div>
+
+<h2 id="troubleshooting">9. Troubleshooting</h2>
+
+<h3>Stream won't play</h3>
+<ul>
+  <li><strong>Check the job status</strong> — If it shows "Failed", the error message will explain why</li>
+  <li><strong>Wait for segments</strong> — If transcoding just started, wait 10-15 seconds for the first segments to be written</li>
+  <li><strong>Check the URL</strong> — Make sure the source URL is accessible from the server</li>
+  <li><strong>Browser compatibility</strong> — The player works in Chrome, Firefox, Safari, and Edge</li>
+</ul>
+
+<h3>Transcoding is slow</h3>
+<ul>
+  <li><strong>CPU-bound</strong> — Video transcoding is CPU-intensive. Faster CPUs produce faster results</li>
+  <li><strong>Source format</strong> — Some formats (e.g., ProRes, RAW) require more processing than others</li>
+  <li><strong>Resolution</strong> — Higher resolution sources take longer to transcode</li>
+</ul>
+
+<h3>Disk usage warnings</h3>
+<ul>
+  <li><strong>Warning (90%)</strong> — Running jobs are paused automatically to prevent disk filling up</li>
+  <li><strong>Critical (95%)</strong> — All jobs are force-stopped</li>
+  <li><strong>Recovery</strong> — Jobs resume automatically when disk usage drops below the warning threshold</li>
+  <li><strong>Manual cleanup</strong> — Delete old jobs and their output to free space</li>
+</ul>
+
+<h3>Job stuck in "Pending"</h3>
+<ul>
+  <li><strong>Max jobs reached</strong> — vieo limits concurrent transcoding jobs (default: 3). Wait for another job to finish</li>
+  <li><strong>Resume on restart</strong> — Pending/running/paused jobs automatically resume when the server restarts</li>
+</ul>
+
+<h3>Source probe fails</h3>
+<ul>
+  <li><strong>Network issues</strong> — The server must be able to reach the source URL</li>
+  <li><strong>Timeout</strong> — Remote HLS streams may take longer to probe (up to 60 seconds)</li>
+  <li><strong>Format support</strong> — Ensure ffmpeg supports the input format</li>
+</ul>
+
+<hr style="margin-top: 3rem; border: none; border-top: 1px solid #e2e8f0;">
+<p style="text-align: center; color: #94a3b8; font-size: 0.85rem; margin-top: 1rem;">vieo v1.0.0 — User Guide</p>
+
+</body>
+</html>

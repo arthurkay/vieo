@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>vieo Platform Document</title>
+<style>
+  @page {
+    size: A4;
+    margin: 2.5cm 2cm 2.5cm 2cm;
+    @bottom-center {
+      content: counter(page);
+      font-size: 9pt;
+      color: #888;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+  }
+  @page:first {
+    @bottom-center { content: none; }
+    margin: 0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.6;
+    color: #1a1a1a;
+    counter-reset: h2counter h3counter;
+  }
+
+  /* ── Cover Page ── */
+  .cover {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+    color: #fff;
+    text-align: center;
+    page-break-after: always;
+    padding: 4rem;
+  }
+  .cover .logo {
+    font-size: 72pt;
+    font-weight: 200;
+    letter-spacing: 8px;
+    margin-bottom: 0.5rem;
+  }
+  .cover .logo span { font-weight: 700; color: #60a5fa; }
+  .cover h1 {
+    font-size: 28pt;
+    font-weight: 300;
+    margin-bottom: 1.5rem;
+    letter-spacing: 2px;
+  }
+  .cover .subtitle {
+    font-size: 13pt;
+    color: #94a3b8;
+    margin-bottom: 3rem;
+    max-width: 500px;
+    line-height: 1.8;
+  }
+  .cover .meta {
+    font-size: 9pt;
+    color: #64748b;
+    position: absolute;
+    bottom: 3rem;
+  }
+  .cover .divider {
+    width: 60px;
+    height: 2px;
+    background: #60a5fa;
+    margin: 1.5rem auto;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    page-break-after: always;
+    padding: 1.5cm 0;
+  }
+  .toc h2 {
+    font-size: 18pt;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin-bottom: 2rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #60a5fa;
+  }
+  .toc ul { list-style: none; }
+  .toc li {
+    padding: 0.4rem 0;
+    border-bottom: 1px dotted #e2e8f0;
+  }
+  .toc li a {
+    color: #1a1a2e;
+    text-decoration: none;
+    display: flex;
+    justify-content: space-between;
+  }
+  .toc li a::after { content: target-counter(attr(href), page); }
+  .toc .toc-h2 { font-weight: 600; font-size: 11pt; }
+  .toc .toc-h3 { padding-left: 1.5rem; font-size: 10pt; color: #64748b; }
+
+  /* ── Content ── */
+  h2 {
+    font-size: 16pt;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 2px solid #60a5fa;
+    page-break-before: always;
+    counter-increment: h2counter;
+  }
+  h2::before { content: counter(h2counter) ". "; }
+
+  h3 {
+    font-size: 13pt;
+    font-weight: 600;
+    color: #334155;
+    margin-top: 1.8rem;
+    margin-bottom: 0.6rem;
+    counter-increment: h3counter;
+  }
+  h3::before { content: counter(h2counter) "." counter(h3counter) " "; }
+
+  p { margin-bottom: 0.8rem; }
+
+  ul, ol { margin: 0.5rem 0 0.8rem 1.5rem; }
+  li { margin-bottom: 0.3rem; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0 1.5rem;
+    font-size: 9.5pt;
+  }
+  th {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 0.5rem 0.7rem;
+    text-align: left;
+    font-weight: 600;
+  }
+  td {
+    padding: 0.4rem 0.7rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  tr:nth-child(even) td { background: #f8fafc; }
+
+  /* Code */
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 9pt;
+    background: #f1f5f9;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    color: #1e293b;
+  }
+  pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 0.8rem 1rem;
+    border-radius: 6px;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 8.5pt;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin: 0.8rem 0 1.2rem;
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+  }
+
+  /* Info boxes */
+  .info {
+    background: #eff6ff;
+    border-left: 4px solid #3b82f6;
+    padding: 0.8rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0 4px 4px 0;
+  }
+  .warn {
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    padding: 0.8rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0 4px 4px 0;
+  }
+
+  /* Architecture diagram */
+  .diagram {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 9pt;
+    line-height: 1.8;
+    white-space: pre;
+  }
+
+  /* State machine */
+  .state-machine {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 9pt;
+    line-height: 1.6;
+    white-space: pre;
+  }
+
+  .page-break { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ COVER ═══════════ -->
+<section class="cover">
+  <div class="logo">vie<span>o</span></div>
+  <h1>Platform Design Document</h1>
+  <div class="divider"></div>
+  <p class="subtitle">
+    A real-time video transcoding and streaming platform built with Go,
+    SQLite, FFmpeg, and React. Transforms any media source into HLS
+    for instant web playback.
+  </p>
+  <p class="meta">Version 1.0 &mdash; June 2026</p>
+</section>
+
+<!-- ═══════════ TOC ═══════════ -->
+<section class="toc">
+  <h2>Table of Contents</h2>
+  <ul>
+    <li class="toc-h2"><a href="#exec">Executive Summary</a></li>
+    <li class="toc-h2"><a href="#arch">System Architecture</a></li>
+    <li class="toc-h3"><a href="#arch-overview">2.1 Architectural Overview</a></li>
+    <li class="toc-h3"><a href="#arch-dataflow">2.2 Data Flow</a></li>
+    <li class="toc-h3"><a href="#arch-tech">2.3 Technology Stack</a></li>
+    <li class="toc-h2"><a href="#comp">Component Design</a></li>
+    <li class="toc-h3"><a href="#comp-media">3.1 Media Engine</a></li>
+    <li class="toc-h3"><a href="#comp-job">3.2 Job Manager</a></li>
+    <li class="toc-h3"><a href="#comp-db">3.3 Database Layer</a></li>
+    <li class="toc-h3"><a href="#comp-api">3.4 API Layer</a></li>
+    <li class="toc-h3"><a href="#comp-ws">3.5 WebSocket Events</a></li>
+    <li class="toc-h2"><a href="#schema">Database Schema</a></li>
+    <li class="toc-h3"><a href="#schema-er">4.1 Entity Relationship</a></li>
+    <li class="toc-h3"><a href="#schema-tables">4.2 Table Definitions</a></li>
+    <li class="toc-h2"><a href="#api">API Reference</a></li>
+    <li class="toc-h3"><a href="#api-rest">5.1 REST Endpoints</a></li>
+    <li class="toc-h3"><a href="#api-ws">5.2 WebSocket Protocol</a></li>
+    <li class="toc-h3"><a href="#api-hls">5.3 HLS Streaming</a></li>
+    <li class="toc-h2"><a href="#ui">UI / UX Design</a></li>
+    <li class="toc-h3"><a href="#ui-pages">6.1 Page Structure</a></li>
+    <li class="toc-h3"><a href="#ui-components">6.2 Key Components</a></li>
+    <li class="toc-h2"><a href="#deploy">Deployment Guide</a></li>
+    <li class="toc-h3"><a href="#deploy-prereqs">7.1 Prerequisites</a></li>
+    <li class="toc-h3"><a href="#deploy-steps">7.2 Installation</a></li>
+    <li class="toc-h3"><a href="#deploy-env">7.3 Configuration</a></li>
+    <li class="toc-h2"><a href="#ops">Operations Guide</a></li>
+    <li class="toc-h3"><a href="#ops-monitor">8.1 Health Monitoring</a></li>
+    <li class="toc-h3"><a href="#ops-resilience">8.2 Resilience Model</a></li>
+    <li class="toc-h3"><a href="#ops-disk">8.3 Disk Space Management</a></li>
+  </ul>
+</section>
+
+<!-- ═══════════ 1. EXECUTIVE SUMMARY ═══════════ -->
+<h2 id="exec">Executive Summary</h2>
+
+<p>
+<strong>vieo</strong> is an open-source video streaming platform designed for
+self-hosted environments. It ingests media from arbitrary sources (files,
+RTMP streams, RTSP feeds, or capture devices), transcodes them into the
+HLS (HTTP Live Streaming) format using FFmpeg, and serves the resulting
+segments over HTTP for playback in any modern web browser via hls.js.
+</p>
+
+<p>
+The platform is built around a <strong>channel</strong> abstraction:
+each source belongs to a channel, and viewers navigate channels to find
+live or archived content. A robust job-manager oversees the lifecycle
+of every transcoding operation — from <em>pending</em> through
+<em>running</em> to <em>completed</em> or <em>failed</em> — with automatic
+pause/resume based on disk pressure, and full recovery after service
+restarts.
+</p>
+
+<p>
+Key design goals include:
+</p>
+<ul>
+  <li><strong>Single-binary deployment</strong> — Go produces a statically linked binary with no runtime dependencies beyond FFmpeg.</li>
+  <li><strong>Zero external services</strong> — SQLite replaces PostgreSQL/MySQL. No Redis, no message queue.</li>
+  <li><strong>Resilience by default</strong> — Jobs survive restarts, disk pressure is handled gracefully, and the system self-recovers.</li>
+  <li><strong>Beautiful UI</strong> — A shadcn/ui React frontend that feels modern and responsive.</li>
+</ul>
+
+<!-- ═══════════ 2. SYSTEM ARCHITECTURE ═══════════ -->
+<h2 id="arch">System Architecture</h2>
+
+<h3 id="arch-overview">2.1 Architectural Overview</h3>
+
+<p>
+vieo follows a <strong>layered monolith</strong> architecture within a single
+process. All components communicate through Go interfaces, keeping the
+system testable and maintainable without introducing network overhead
+between services.
+</p>
+
+<div class="diagram">
+┌─────────────────────────────────────────────────────────┐
+│                    HTTP / WS Server                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │
+│  │ Channels │  │ Sources  │  │  Jobs    │  │ Stream │ │
+│  │  Handler │  │ Handler  │  │  Handler │  │Handler │ │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───┬────┘ │
+│       │              │              │             │      │
+│  ┌────▼──────────────▼──────────────▼─────────────▼──┐  │
+│  │              Router (chi) + Middleware             │  │
+│  └───────────────────────┬───────────────────────────┘  │
+└──────────────────────────┼──────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────┐
+│                    Job Manager                           │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │  State      │  │  Worker Pool │  │  Disk Watcher   │  │
+│  │  Machine    │  │  (goroutines)│  │  (ticker)       │  │
+│  └──────┬──────┘  └──────┬───────┘  └────────┬───────┘  │
+│         │                │                    │          │
+│         └────────────────┼────────────────────┘          │
+└──────────────────────────┼──────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────┐
+│                    Media Engine                          │
+│  ┌────────────────┐  ┌──────────────┐  ┌─────────────┐  │
+│  │  ffprobe Probe │  │  ffmpeg      │  │  HLS        │  │
+│  │  (media info)  │  │  Transcode   │  │  Segmenter  │  │
+│  └────────────────┘  └──────┬───────┘  └─────────────┘  │
+│                             │                            │
+│                    ┌────────▼────────┐                   │
+│                    │  CLI Subprocess │                   │
+│                    │  (ffmpeg/ffprobe)│                  │
+│                    └─────────────────┘                   │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────┐
+│                    SQLite Database                       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐  │
+│  │ Channels │  │ Sources  │  │ Outputs  │  │  Jobs  │  │
+│  └──────────┘  └──────────┘  └──────────┘  └────────┘  │
+└─────────────────────────────────────────────────────────┘
+</div>
+
+<h3 id="arch-dataflow">2.2 Data Flow</h3>
+
+<ol>
+  <li><strong>Ingest</strong> — A source is registered via the API (file path, RTMP URL, or device).</li>
+  <li><strong>Probe</strong> — ffprobe extracts codec, resolution, duration, and format metadata.</li>
+  <li><strong>Transcode</strong> — A job is created and dispatched to the worker pool. ffmpeg reads the source and writes HLS segments.</li>
+  <li><strong>Serve</strong> — The HTTP server exposes .m3u8 playlists and .ts segments under <code>/api/stream/{id}/</code>.</li>
+  <li><strong>Play</strong> — The React frontend uses hls.js to fetch and render the stream in a <code>&lt;video&gt;</code> element.</li>
+  <li><strong>Monitor</strong> — WebSocket pushes real-time job progress (status, progress %, logs) to the UI.</li>
+</ol>
+
+<div class="info">
+  <strong>Transcoding Pipeline:</strong>
+  <code>Source → ffprobe (info) → ffmpeg (decode → encode H.264/AAC) → segmenter (.ts + .m3u8) → HTTP server → hls.js → &lt;video&gt;</code>
+</div>
+
+<h3 id="arch-tech">2.3 Technology Stack</h3>
+
+<table>
+  <tr><th>Layer</th><th>Technology</th><th>Rationale</th></tr>
+  <tr><td>Language</td><td>Go 1.22+</td><td>Single binary, great concurrency, fast compilation</td></tr>
+  <tr><td>HTTP Router</td><td>chi</td><td>Lightweight, stdlib-compatible, middleware ecosystem</td></tr>
+  <tr><td>Database</td><td>SQLite (modernc.org/sqlite)</td><td>Zero-dependency, pure Go, embedded</td></tr>
+  <tr><td>WebSocket</td><td>nhooyr.io/websocket</td><td>Context-aware, clean API, stdlib-friendly</td></tr>
+  <tr><td>Media</td><td>ffprobe / ffmpeg (CLI)</td><td>Battle-tested, supports every format, easy to update</td></tr>
+  <tr><td>Frontend</td><td>React 18 + Vite</td><td>Fast dev experience, modern tooling</td></tr>
+  <tr><td>UI Library</td><td>shadcn/ui</td><td>Accessible, customizable, beautiful defaults</td></tr>
+  <tr><td>Player</td><td>hls.js</td><td>MSE-based HLS playback in all modern browsers</td></tr>
+</table>
+
+<!-- ═══════════ 3. COMPONENT DESIGN ═══════════ -->
+<h2 id="comp">Component Design</h2>
+
+<h3 id="comp-media">3.1 Media Engine</h3>
+
+<p>
+The Media Engine (<code>internal/media/</code>) encapsulates all interaction
+with FFmpeg and ffprobe. It exposes two primary interfaces:
+</p>
+
+<h4>Probe</h4>
+<p>
+Wraps <code>ffprobe</code> to extract media metadata. Returns a
+<code>MediaInfo</code> struct containing:
+</p>
+<ul>
+  <li>Format: container, duration, bitrate, size</li>
+  <li>Video streams: codec, resolution, frame rate, pixel format</li>
+  <li>Audio streams: codec, sample rate, channels, bitrate</li>
+</ul>
+
+<h4>Transcode</h4>
+<p>
+Constructs and executes an <code>ffmpeg</code> command that
+transcodes any input to HLS. The command template:
+</p>
+
+<pre><code>ffmpeg -i &lt;input&gt; \
+  -codec:v libx264 -preset fast -crf 23 \
+  -codec:a aac -b:a 128k \
+  -f hls \
+  -hls_time 4 \
+  -hls_list_size 0 \
+  -hls_segment_filename &lt;output_dir&gt;/seg_%05d.ts \
+  &lt;output_dir&gt;/playlist.m3u8</code></pre>
+
+<p>
+Progress is parsed from FFmpeg's stderr (the <code>time=...</code> lines)
+and pushed into a channel for the Job Manager to consume.
+</p>
+
+<h3 id="comp-job">3.2 Job Manager</h3>
+
+<p>
+The Job Manager (<code>internal/job/</code>) owns the lifecycle of
+every transcoding operation.
+</p>
+
+<h4>State Machine</h4>
+
+<div class="state-machine">
+         ┌──────────┐
+         │  pending  │
+         └────┬─────┘
+              │ start
+         ┌────▼─────┐
+    ┌────│  running  │◄────────────┐
+    │    └────┬─────┘              │
+    │         │ fail               │ resume
+    │    ┌────▼─────┐         ┌────┴─────┐
+    │    │  failed   │         │  paused   │
+    │    └──────────┘         └────┬─────┘
+    │                              │ disk OK
+    │    ┌──────────┐              │
+    └────│completed │              │
+         └──────────┘              │
+                                   │ manual stop
+                              ┌────▼─────┐
+                              │ stopped   │
+                              └──────────┘
+</div>
+
+<table>
+  <tr><th>State</th><th>Description</th></tr>
+  <tr><td>pending</td><td>Job created, awaiting resources</td></tr>
+  <tr><td>running</td><td>Actively transcoding</td></tr>
+  <tr><td>paused</td><td>Paused due to disk pressure or signal</td></tr>
+  <tr><td>completed</td><td>Source fully consumed, HLS output ready</td></tr>
+  <tr><td>failed</td><td>Unrecoverable error (bad source, corrupt file)</td></tr>
+  <tr><td>stopped</td><td>Manually stopped by user</td></tr>
+</table>
+
+<h4>Worker Pool</h4>
+<p>
+A configurable number of goroutines (default: 3) consume from a job
+channel. Each worker manages one ffmpeg subprocess. The pool respects
+context cancellation for graceful shutdown.
+</p>
+
+<h4>Disk Watcher</h4>
+<p>
+A background goroutine ticks every 30 seconds, checking disk usage
+on the data partition via <code>syscall.Statfs</code>. When usage
+exceeds <code>VIEO_DISK_WARN</code> (default 90%), running jobs are
+paused. Below that threshold, paused jobs resume automatically.
+At <code>VIEO_DISK_CRIT</code> (95%), jobs are force-stopped.
+</p>
+
+<h3 id="comp-db">3.3 Database Layer</h3>
+
+<p>
+Uses <code>modernc.org/sqlite</code> — a pure Go SQLite implementation
+that requires no CGO. Migrations are stored as an ordered slice of SQL
+strings in <code>internal/db/db.go</code> and applied at startup.
+</p>
+
+<p>
+Each model (channel, source, output, job) lives in its own file under
+<code>internal/db/models/</code> and exposes CRUD functions that accept
+<code>context.Context</code> and <code>*sql.DB</code> as first parameters.
+</p>
+
+<h3 id="comp-api">3.4 API Layer</h3>
+
+<p>
+Built on <code>go-chi/chi</code> v5, the API server is defined in
+<code>internal/server/server.go</code> with routes registered in
+<code>internal/server/routes.go</code>. Handlers are grouped by
+resource in <code>internal/server/handler/</code>.
+</p>
+
+<p>Middleware stack:</p>
+<ul>
+  <li><code>chi.Logger</code> — request logging</li>
+  <li><code>chi.Recoverer</code> — panic recovery</li>
+  <li><code>chi.RealIP</code> — trusted proxy IP</li>
+  <li><code>CORS</code> — for frontend dev server (localhost:5173)</li>
+</ul>
+
+<h3 id="comp-ws">3.5 WebSocket Events</h3>
+
+<p>
+The <code>/api/ws</code> endpoint upgrades HTTP connections to WebSocket.
+The server pushes typed JSON events to all connected clients:
+</p>
+
+<table>
+  <tr><th>Event Type</th><th>Payload</th><th>When</th></tr>
+  <tr><td><code>job:update</code></td><td><code>{"id":1,"status":"running","progress":0.45}</code></td><td>Progress tick (every ~2s)</td></tr>
+  <tr><td><code>job:log</code></td><td><code>{"id":1,"level":"info","message":"..."}</code></td><td>ffmpeg log line</td></tr>
+  <tr><td><code>job:complete</code></td><td><code>{"id":1,"status":"completed"}</code></td><td>Job finishes successfully</td></tr>
+  <tr><td><code>job:error</code></td><td><code>{"id":1,"status":"failed","error":"..."}</code></td><td>Job fails</td></tr>
+  <tr><td><code>job:paused</code></td><td><code>{"id":1,"status":"paused","reason":"disk"}</code></td><td>Job paused</td></tr>
+</table>
+
+<!-- ═══════════ 4. DATABASE SCHEMA ═══════════ -->
+<h2 id="schema">Database Schema</h2>
+
+<h3 id="schema-er">4.1 Entity Relationship</h3>
+
+<pre>
+  ┌───────────┐       ┌───────────┐       ┌───────────┐
+  │  Channel   │       │  Source    │       │  Output    │
+  ├───────────┤       ├───────────┤       ├───────────┤
+  │ id (PK)   │──1:N──│ id (PK)   │──1:1──│ id (PK)   │
+  │ name      │       │ channel_id│       │ source_id │
+  │ slug      │       │ type      │       │ type      │
+  │ created_at│       │ url/path  │       │ path      │
+  └───────────┘       │ metadata  │       │ created_at│
+                      │ created_at│       └─────┬─────┘
+                      └─────┬─────┘             │
+                            │                    │
+                            │ 1:N               │ 1:1
+                            │                    │
+                      ┌─────▼─────┐       ┌─────▼─────┐
+                      │    Job     │       │    Job     │
+                      ├───────────┤       ├───────────┤
+                      │ id (PK)   │       │            │
+                      │ source_id │       │ output_id  │
+                      │ status    │       │            │
+                      │ progress  │       │            │
+                      │ error_msg │       │            │
+                      │ pid       │       │            │
+                      │ created_at│       │            │
+                      │ ended_at  │       │            │
+                      └─────┬─────┘       └───────────┘
+                            │
+                            │ 1:N
+                      ┌─────▼─────┐
+                      │  Job Log   │
+                      ├───────────┤
+                      │ job_id    │
+                      │ level     │
+                      │ message   │
+                      │ created_at│
+                      └───────────┘
+</pre>
+
+<h3 id="schema-tables">4.2 Table Definitions</h3>
+
+<h4>channels</h4>
+<pre><code>CREATE TABLE channels (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    slug       TEXT    NOT NULL UNIQUE,
+    description TEXT   DEFAULT '',
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);</code></pre>
+
+<h4>sources</h4>
+<pre><code>CREATE TABLE sources (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    type       TEXT    NOT NULL CHECK(type IN ('file','rtmp','rtsp','device')),
+    url        TEXT    NOT NULL,
+    metadata   TEXT    DEFAULT '{}',
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);</code></pre>
+
+<h4>outputs</h4>
+<pre><code>CREATE TABLE outputs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id  INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    type       TEXT    NOT NULL DEFAULT 'hls',
+    path       TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);</code></pre>
+
+<h4>jobs</h4>
+<pre><code>CREATE TABLE jobs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id  INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    output_id  INTEGER NOT NULL REFERENCES outputs(id) ON DELETE CASCADE,
+    status     TEXT    NOT NULL DEFAULT 'pending'
+                      CHECK(status IN ('pending','running','paused','completed','failed','stopped')),
+    progress   REAL    NOT NULL DEFAULT 0.0,
+    error_msg  TEXT    DEFAULT '',
+    pid        INTEGER DEFAULT 0,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    ended_at   TEXT
+);</code></pre>
+
+<h4>job_logs</h4>
+<pre><code>CREATE TABLE job_logs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id     INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    level      TEXT    NOT NULL DEFAULT 'info',
+    message    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);</code></pre>
+
+<!-- ═══════════ 5. API REFERENCE ═══════════ -->
+<h2 id="api">API Reference</h2>
+
+<h3 id="api-rest">5.1 REST Endpoints</h3>
+
+<h4>Health</h4>
+<pre><code>GET /api/health
+→ 200 {"status":"ok","version":"1.0.0"}</code></pre>
+
+<h4>Channels</h4>
+<pre><code>GET    /api/channels          → List all channels
+POST   /api/channels          → Create channel
+GET    /api/channels/{id}     → Get channel by ID
+PUT    /api/channels/{id}     → Update channel
+DELETE /api/channels/{id}     → Delete channel (cascades sources, outputs, jobs)</code></pre>
+
+<h4>Sources</h4>
+<pre><code>GET    /api/sources           → List sources (?channel_id=N to filter)
+POST   /api/sources           → Create source
+GET    /api/sources/{id}      → Get source by ID
+DELETE /api/sources/{id}      → Delete source (cascades outputs, jobs)</code></pre>
+
+<h4>Outputs</h4>
+<pre><code>GET    /api/outputs           → List outputs
+POST   /api/outputs           → Create output for a source
+DELETE /api/outputs/{id}      → Delete output</code></pre>
+
+<h4>Jobs</h4>
+<pre><code>GET    /api/jobs              → List jobs (?status=running&source_id=N)
+POST   /api/jobs              → Create + start job
+POST   /api/jobs/{id}/stop    → Stop job (SIGTERM → SIGKILL)
+DELETE /api/jobs/{id}         → Delete job record</code></pre>
+
+<h4>Streaming</h4>
+<pre><code>GET /api/stream/{id}/*        → Serve HLS files
+  /api/stream/{id}/playlist.m3u8
+  /api/stream/{id}/seg_00001.ts</code></pre>
+
+<h3 id="api-ws">5.2 WebSocket Protocol</h3>
+
+<pre><code>GET /api/ws → Upgrade to WebSocket</code></pre>
+
+<p>
+The WebSocket connection is bidirectional. The server pushes events
+as JSON objects. All event objects share this structure:
+</p>
+
+<pre><code>{
+  "type": "job:update",       // event type
+  "payload": {                // event-specific data
+    "id": 1,
+    "status": "running",
+    "progress": 0.45
+  }
+}</code></pre>
+
+<table>
+  <tr><th>Type</th><th>Direction</th><th>Description</th></tr>
+  <tr><td><code>job:update</code></td><td>Server → Client</td><td>Periodic progress update</td></tr>
+  <tr><td><code>job:log</code></td><td>Server → Client</td><td>Transcoding log line</td></tr>
+  <tr><td><code>job:complete</code></td><td>Server → Client</td><td>Job completed successfully</td></tr>
+  <tr><td><code>job:error</code></td><td>Server → Client</td><td>Job failed with error</td></tr>
+  <tr><td><code>job:paused</code></td><td>Server → Client</td><td>Job paused (disk/network)</td></tr>
+  <tr><td><code>ping</code></td><td>Server → Client</td><td>Keepalive (every 30s)</td></tr>
+  <tr><td><code>pong</code></td><td>Client → Server</td><td>Keepalive response</td></tr>
+</table>
+
+<h3 id="api-hls">5.3 HLS Streaming</h3>
+
+<p>
+HLS segments and playlists are served as static files from the data
+directory. The server maps <code>/api/stream/{output_id}/*</code> to
+the output's path on disk.
+</p>
+
+<div class="warn">
+  <strong>Cache headers:</strong> Playlists (<code>.m3u8</code>) are served
+  with <code>Cache-Control: no-cache</code>. Segments (<code>.ts</code>)
+  are served with <code>Cache-Control: public, max-age=3600</code>.
+</div>
+
+<!-- ═══════════ 6. UI / UX DESIGN ═══════════ -->
+<h2 id="ui">UI / UX Design</h2>
+
+<h3 id="ui-pages">6.1 Page Structure</h3>
+
+<table>
+  <tr><th>Route</th><th>Page</th><th>Description</th></tr>
+  <tr><td><code>/</code></td><td>Dashboard</td><td>Overview: active jobs, channel list, system health</td></tr>
+  <tr><td><code>/channels</code></td><td>Channels</td><td>List, create, edit, delete channels</td></tr>
+  <tr><td><code>/channels/:id</code></td><td>Channel Detail</td><td>Channel info, sources list, video player</td></tr>
+  <tr><td><code>/sources</code></td><td>Sources</td><td>List, create, delete sources</td></tr>
+  <tr><td><code>/jobs</code></td><td>Jobs</td><td>List all jobs with status, progress, controls</td></tr>
+  <tr><td><code>/jobs/:id</code></td><td>Job Detail</td><td>Job logs, progress chart, controls</td></tr>
+</table>
+
+<h3 id="ui-components">6.2 Key Components</h3>
+
+<h4>VideoPlayer</h4>
+<p>
+Wraps hls.js with a clean <code>&lt;video&gt;</code> element.
+Features: play/pause, seek, volume, fullscreen, picture-in-picture.
+Supports automatic quality switching via hls.js level selection.
+</p>
+
+<h4>JobStatusBadge</h4>
+<p>
+A compact badge component showing job state with color coding:
+</p>
+<ul>
+  <li><strong>Pending</strong> — gray</li>
+  <li><strong>Running</strong> — blue + animated pulse</li>
+  <li><strong>Paused</strong> — amber</li>
+  <li><strong>Completed</strong> — green</li>
+  <li><strong>Failed</strong> — red</li>
+  <li><strong>Stopped</strong> — slate</li>
+</ul>
+
+<h4>ProgressBar</h4>
+<p>
+A thin animated progress bar (0–100%) that updates via WebSocket
+in near real-time. Uses <code>transition: width 0.5s ease</code> for
+smooth visual updates.
+</p>
+
+<h4>SidebarLayout</h4>
+<p>
+The main application shell with:
+</p>
+<ul>
+  <li>Collapsible sidebar (navigation links, branding)</li>
+  <li>Top header bar (breadcrumbs, system status indicator)</li>
+  <li>Main content area (router outlet)</li>
+</ul>
+
+<!-- ═══════════ 7. DEPLOYMENT ═══════════ -->
+<h2 id="deploy">Deployment Guide</h2>
+
+<h3 id="deploy-prereqs">7.1 Prerequisites</h3>
+
+<ul>
+  <li>Go 1.22+</li>
+  <li>FFmpeg + ffprobe (available on PATH)</li>
+  <li>Node.js 18+ and npm (for frontend builds)</li>
+  <li>A POSIX-compatible OS (Linux, macOS, BSD)</li>
+</ul>
+
+<h3 id="deploy-steps">7.2 Installation</h3>
+
+<pre><code># 1. Clone repository
+git clone https://github.com/arthurkay/vieo
+cd vieo
+
+# 2. Build backend
+go build -o vieo ./cmd/vieo
+
+# 3. Build frontend
+cd web
+npm install
+npm run build
+cd ..
+
+# 4. Run
+./vieo \
+  --db ./data/vieo.db \
+  --data-dir ./data/hls \
+  --http-addr :8080</code></pre>
+
+<p>
+The frontend build output is automatically embedded in the Go binary
+(via <code>embed.FS</code>) and served at the root <code>/</code> when
+no other route matches.
+</p>
+
+<h3 id="deploy-env">7.3 Configuration</h3>
+
+<table>
+  <tr><th>Flag</th><th>Env Variable</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>--db</code></td><td><code>VIEO_DB_PATH</code></td><td><code>./vieo.db</code></td><td>SQLite database path</td></tr>
+  <tr><td><code>--data-dir</code></td><td><code>VIEO_DATA_DIR</code></td><td><code>./data</code></td><td>HLS output directory</td></tr>
+  <tr><td><code>--http-addr</code></td><td><code>VIEO_HTTP_ADDR</code></td><td><code>:8080</code></td><td>HTTP bind address</td></tr>
+  <tr><td><code>--log-level</code></td><td><code>VIEO_LOG_LEVEL</code></td><td><code>info</code></td><td>debug, info, warn, error</td></tr>
+  <tr><td><code>--disk-warn</code></td><td><code>VIEO_DISK_WARN</code></td><td><code>90</code></td><td>Disk % to pause jobs</td></tr>
+  <tr><td><code>--disk-crit</code></td><td><code>VIEO_DISK_CRIT</code></td><td><code>95</code></td><td>Disk % to stop jobs</td></tr>
+  <tr><td><code>--max-jobs</code></td><td><code>VIEO_MAX_JOBS</code></td><td><code>3</code></td><td>Max concurrent transcodes</td></tr>
+</table>
+
+<div class="info">
+  <strong>Priority:</strong> Flags override env vars, which override
+  defaults. This allows for simple development with defaults and
+  production configuration through the environment.
+</div>
+
+<!-- ═══════════ 8. OPERATIONS ═══════════ -->
+<h2 id="ops">Operations Guide</h2>
+
+<h3 id="ops-monitor">8.1 Health Monitoring</h3>
+
+<p>
+The <code>/api/health</code> endpoint returns:
+</p>
+
+<pre><code>{
+  "status": "ok",
+  "version": "1.0.0",
+  "uptime": 3600,
+  "jobs": {
+    "running": 2,
+    "pending": 1,
+    "completed": 15,
+    "failed": 0
+  },
+  "disk": {
+    "usage_percent": 67,
+    "total_gb": 500,
+    "free_gb": 165
+  }
+}</code></pre>
+
+<h3 id="ops-resilience">8.2 Resilience Model</h3>
+
+<h4>Job Persistence</h4>
+<p>
+At startup, the Job Manager queries the database for all jobs left in
+<code>running</code> or <code>paused</code> state and resumes them.
+Running jobs from a previous process instance are reset to
+<code>pending</code> (since their ffmpeg PID is gone), then restarted.
+</p>
+
+<h4>Graceful Shutdown</h4>
+<p>
+On <code>SIGTERM</code> / <code>SIGINT</code>:
+</p>
+<ol>
+  <li>HTTP server stops accepting new connections.</li>
+  <li>Running ffmpeg processes receive <code>SIGTERM</code>.</li>
+  <li>After 5 seconds, any remaining processes receive <code>SIGKILL</code>.</li>
+  <li>Job states are persisted to the database.</li>
+  <li>Database connection is closed cleanly.</li>
+  <li>Process exits.</li>
+</ol>
+
+<h4>Process Supervision</h4>
+<p>
+If an ffmpeg subprocess exits unexpectedly, the Job Manager marks it
+as <code>failed</code> and logs the exit code. A configurable retry
+policy (<code>max_retries: 3</code> with exponential backoff) can
+reattempt the job.
+</p>
+
+<h3 id="ops-disk">8.3 Disk Space Management</h3>
+
+<table>
+  <tr><th>Threshold</th><th>Action</th></tr>
+  <tr><td>&lt; 90%</td><td>Normal operation. All jobs proceed.</td></tr>
+  <tr><td>90% – 95%</td><td>Running jobs are <strong>paused</strong> (SIGSTOP to ffmpeg). Paused jobs resume when disk drops below 85%.</td></tr>
+  <tr><td>&gt; 95%</td><td>Running jobs are <strong>stopped</strong> (SIGTERM → SIGKILL). No new jobs accepted. Admin alert logged.</td></tr>
+</table>
+
+<p>
+The disk watcher checks every 30 seconds using <code>syscall.Statfs</code>
+on the data directory partition.
+</p>
+
+<hr style="margin: 3rem 0; border: none; border-top: 1px solid #e2e8f0;">
+
+<p style="text-align: center; color: #94a3b8; font-size: 9pt;">
+  vieo Platform Design Document &mdash; Version 1.0 &mdash; June 2026
+</p>
+
+</body>
+</html>
