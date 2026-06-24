@@ -1,4 +1,4 @@
-import type { Channel, Source, Output, Job } from '../types'
+import type { Channel, Source, Output, Job } from '@/types'
 
 const BASE = '/api'
 
@@ -72,6 +72,8 @@ export const api = {
       request<void>(`/jobs/${id}/stop`, { method: 'POST' }),
     pause: (id: number) =>
       request<void>(`/jobs/${id}/pause`, { method: 'POST' }),
+    resume: (id: number) =>
+      request<void>(`/jobs/${id}/resume`, { method: 'POST' }),
     retry: (id: number) =>
       request<void>(`/jobs/${id}/retry`, { method: 'POST' }),
     delete: (id: number) =>

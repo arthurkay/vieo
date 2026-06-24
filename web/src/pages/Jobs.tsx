@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../lib/api'
-import { Button } from '../components/ui/button'
-import { Card, CardContent } from '../components/ui/card'
-import { Select } from '../components/ui/select'
-import JobStatusBadge from '../components/JobStatusBadge'
-import ProgressBar from '../components/ProgressBar'
-import { useWebSocket } from '../hooks/use-websocket'
-import { Trash2, StopCircle, Pause, RotateCcw, Play } from 'lucide-react'
-import type { Job } from '../types'
+import { api } from '@/lib/api'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useWebSocket } from '@/hooks/use-websocket'
+import { Trash2, StopCircle, Pause, Play, RotateCcw, PlayCircle } from 'lucide-react'
+import type { Job } from '@/types'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export default function Jobs() {
   const queryClient = useQueryClient()
@@ -30,6 +31,12 @@ export default function Jobs() {
     mutationFn: (id: number) => api.jobs.pause(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
     onError: (err: Error) => alert(`Pause failed: ${err.message}`),
+  })
+
+  const resumeMutation = useMutation({
+    mutationFn: (id: number) => api.jobs.resume(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
+    onError: (err: Error) => alert(`Resume failed: ${err.message}`),
   })
 
   const retryMutation = useMutation({
@@ -73,29 +80,33 @@ export default function Jobs() {
           <h2 className="text-3xl font-bold tracking-tight">Jobs</h2>
           <p className="text-muted-foreground">Monitor transcoding jobs</p>
         </div>
-        <Select
-          options={[
-            { value: '', label: 'All Statuses' },
-            { value: 'pending', label: 'Pending' },
-            { value: 'running', label: 'Running' },
-            { value: 'paused', label: 'Paused' },
-            { value: 'completed', label: 'Completed' },
-            { value: 'failed', label: 'Failed' },
-            { value: 'stopped', label: 'Stopped' },
-          ]}
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="w-40"
-        />
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="All Statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="running">Running</SelectItem>
+            <SelectItem value="paused">Paused</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="failed">Failed</SelectItem>
+            <SelectItem value="stopped">Stopped</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-3">
         {isLoading ? (
-          <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              Loading jobs...
-            </CardContent>
-          </Card>
+          Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="py-4 space-y-2">
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-4 w-64" />
+                <Skeleton className="h-2 w-full" />
+              </CardContent>
+            </Card>
+          ))
         ) : jobs && jobs.length > 0 ? (
           jobs.map((job) => (
             <JobCard
@@ -103,6 +114,7 @@ export default function Jobs() {
               job={job}
               onStop={() => stopMutation.mutate(job.id)}
               onPause={() => pauseMutation.mutate(job.id)}
+              onResume={() => resumeMutation.mutate(job.id)}
               onRetry={() => retryMutation.mutate(job.id)}
               onDelete={() => deleteMutation.mutate(job.id)}
             />
@@ -123,12 +135,14 @@ function JobCard({
   job,
   onStop,
   onPause,
+  onResume,
   onRetry,
   onDelete,
 }: {
   job: Job
   onStop: () => void
   onPause: () => void
+  onResume: () => void
   onRetry: () => void
   onDelete: () => void
 }) {
@@ -138,7 +152,7 @@ function JobCard({
   const isPaused = job.status === 'paused'
   const isActive = isPending || isRunning || isPaused
   const canRetry = job.status === 'failed' || job.status === 'stopped' || job.status === 'completed'
-  const canPlay = (isRunning || job.status === 'completed') && job.output_id
+  const canPlay = (isRunning || isPaused || job.status === 'completed') && job.output_id
 
   return (
     <Card>
@@ -146,7 +160,7 @@ function JobCard({
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <span className="font-medium">Job #{job.id}</span>
-            <JobStatusBadge status={job.status} />
+            <Badge variant={job.status as 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'}>{job.status}</Badge>
           </div>
           <div className="flex gap-1">
             {canPlay && (
@@ -157,6 +171,11 @@ function JobCard({
             {isRunning && (
               <Button variant="ghost" size="sm" onClick={onPause} title="Pause">
                 <Pause className="h-3 w-3" />
+              </Button>
+            )}
+            {isPaused && (
+              <Button variant="ghost" size="sm" onClick={onResume} title="Resume">
+                <PlayCircle className="h-3 w-3" />
               </Button>
             )}
             {isActive && (
@@ -181,7 +200,7 @@ function JobCard({
           <div>{new Date(job.created_at).toLocaleString()}</div>
         </div>
 
-        {(isRunning || isPaused) && <ProgressBar progress={job.progress} />}
+        {(isRunning || isPaused) && <Progress value={job.progress * 100} className="h-2" />}
 
         {job.error_msg && (
           <p className="text-sm text-destructive mt-2">{job.error_msg}</p>

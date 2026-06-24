@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { api } from '../lib/api'
-import { Button } from '../components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Input } from '../components/ui/input'
+import { api } from '@/lib/api'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Plus, Edit2, Trash2, ExternalLink } from 'lucide-react'
 
 export default function Channels() {
@@ -84,16 +85,16 @@ export default function Channels() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Name</label>
+              <div className="space-y-2">
+                <Label>Name</Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} required />
               </div>
-              <div>
-                <label className="text-sm font-medium">Slug</label>
+              <div className="space-y-2">
+                <Label>Slug</Label>
                 <Input value={slug} onChange={(e) => setSlug(e.target.value)} required />
               </div>
-              <div>
-                <label className="text-sm font-medium">Description</label>
+              <div className="space-y-2">
+                <Label>Description</Label>
                 <Input value={description} onChange={(e) => setDescription(e.target.value)} />
               </div>
               <div className="flex gap-2">

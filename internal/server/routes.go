@@ -41,6 +41,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/", handler.CreateJob(s.DB, s.Manager))
 		r.Post("/{id}/stop", handler.StopJob(s.DB, s.Manager))
 		r.Post("/{id}/pause", handler.PauseJob(s.DB, s.Manager))
+		r.Post("/{id}/resume", handler.ResumeJob(s.DB, s.Manager))
 		r.Post("/{id}/retry", handler.RetryJob(s.DB, s.Manager))
 		r.Delete("/{id}", handler.DeleteJob(s.DB))
 	})

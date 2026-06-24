@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { cn } from '../lib/utils'
+import { cn } from '@/lib/utils'
 import { useTheme } from './theme-provider'
 import {
   LayoutDashboard,
@@ -19,7 +19,7 @@ const links = [
 ]
 
 export default function Sidebar() {
-  const { theme, toggleTheme } = useTheme()
+  const { setTheme, resolvedTheme } = useTheme()
 
   return (
     <aside className="w-56 border-r bg-card flex flex-col">
@@ -52,11 +52,11 @@ export default function Sidebar() {
       </nav>
       <div className="p-4 border-t space-y-2">
         <button
-          onClick={toggleTheme}
+          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
           className="flex items-center gap-3 w-full px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
         >
-          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+          {resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          {resolvedTheme === 'dark' ? 'Light Mode' : 'Dark Mode'}
         </button>
         <div className="flex items-center gap-2 text-xs text-muted-foreground px-3">
           <HardDrive className="h-3 w-3" />

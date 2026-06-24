@@ -37,6 +37,9 @@ func StreamHLS(dataDir string) http.HandlerFunc {
 		case ".ts":
 			w.Header().Set("Content-Type", "video/mp2t")
 			w.Header().Set("Cache-Control", "public, max-age=3600")
+		case ".jpg", ".jpeg":
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Cache-Control", "public, max-age=3600")
 		default:
 			http.Error(w, "unsupported file type", http.StatusBadRequest)
 			return

@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import Hls from 'hls.js'
-import { cn } from '../lib/utils'
+import { cn } from '@/lib/utils'
 import { Loader2 } from 'lucide-react'
 
 interface VideoPlayerProps {
   streamUrl: string
+  posterUrl?: string
   isLive?: boolean
   className?: string
 }
 
-export default function VideoPlayer({ streamUrl, isLive = false, className = '' }: VideoPlayerProps) {
+export default function VideoPlayer({ streamUrl, posterUrl, isLive = false, className = '' }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const retryCountRef = useRef(0)
@@ -46,8 +47,9 @@ export default function VideoPlayer({ streamUrl, isLive = false, className = '' 
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (destroyed) return
+
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR && data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR) {
-          if (retryCountRef.current < (live ? 10 : 0)) {
+          if (retryCountRef.current < 5) {
             retryCountRef.current++
             const delay = Math.min(1000 * Math.pow(1.5, retryCountRef.current - 1), 8000)
             retryTimerRef.current = setTimeout(() => {
@@ -57,6 +59,25 @@ export default function VideoPlayer({ streamUrl, isLive = false, className = '' 
           } else {
             setStatus('error')
           }
+          return
+        }
+
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && data.fatal) {
+          hls?.startLoad()
+          return
+        }
+
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && data.fatal) {
+          if (hls?.recoverMediaError()) return
+          hls?.destroy()
+          attachHls()
+          return
+        }
+
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+          (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR || data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT)) {
+          hls?.startLoad()
+          return
         }
       })
 
@@ -93,15 +114,23 @@ export default function VideoPlayer({ streamUrl, isLive = false, className = '' 
   }, [streamUrl])
 
   return (
-    <div className={cn('relative bg-black rounded-md overflow-hidden', className)}>
+    <div className={cn('relative bg-background rounded-md overflow-hidden', className)}>
       <video
         ref={videoRef}
         className="w-full h-full object-contain"
         controls={status === 'ready'}
         playsInline
+        poster={posterUrl}
       />
-      {status === 'loading' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+      {status === 'loading' && posterUrl && (
+        <img
+          src={posterUrl}
+          alt=""
+          className="absolute inset-0 w-full h-full object-contain"
+        />
+      )}
+      {status === 'loading' && !posterUrl && (
+        <div className="absolute inset-0 flex items-center justify-center">
           <Loader2 className="h-8 w-8 text-white animate-spin" />
         </div>
       )}

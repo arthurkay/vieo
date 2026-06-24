@@ -1,0 +1,7 @@
+vieo.db
+node_modules/
+dist/
+tmp/
+*.log
+.env
+data/

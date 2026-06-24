@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { api } from '../lib/api'
+import { api } from '@/lib/api'
 import { AlertTriangle, HardDrive } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 export default function StorageBanner() {
   const { data: health } = useQuery({
@@ -20,11 +21,12 @@ export default function StorageBanner() {
 
   return (
     <div
-      className={`flex items-center gap-3 px-4 py-2 text-sm font-medium ${
+      className={cn(
+        'flex items-center gap-3 px-4 py-2 text-sm font-medium border-b',
         isCritical
-          ? 'bg-red-100 text-red-800 border-b border-red-200'
-          : 'bg-amber-100 text-amber-800 border-b border-amber-200'
-      }`}
+          ? 'bg-destructive/10 text-destructive border-destructive/20'
+          : 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+      )}
     >
       {isCritical ? (
         <AlertTriangle className="h-4 w-4 shrink-0" />

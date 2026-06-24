@@ -1,14 +1,17 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { api } from '../lib/api'
-import { Button } from '../components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Input } from '../components/ui/input'
-import { Select } from '../components/ui/select'
-import { useWebSocket } from '../hooks/use-websocket'
+import { api } from '@/lib/api'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useWebSocket } from '@/hooks/use-websocket'
 import { Plus, Play } from 'lucide-react'
-import type { Source } from '../types'
+import type { Source } from '@/types'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export default function ChannelDetail() {
   const { id } = useParams<{ id: string }>()
@@ -87,41 +90,52 @@ export default function ChannelDetail() {
                 e.preventDefault()
                 createSourceMutation.mutate({ channel_id: channelId, type: sourceType, url: sourceUrl })
               }}
-              className="flex flex-wrap gap-2 mb-4"
+              className="flex flex-wrap gap-2 mb-4 items-end"
             >
-              <Select
-                options={[
-                  { value: 'file', label: 'File / URL' },
-                  { value: 'hls', label: 'HLS Stream' },
-                  { value: 'rtmp', label: 'RTMP' },
-                  { value: 'rtsp', label: 'RTSP' },
-                  { value: 'device', label: 'Device' },
-                ]}
-                value={sourceType}
-                onChange={(e) => setSourceType(e.target.value as Source['type'])}
-                className="w-32"
-              />
-              <Input
-                placeholder="URL or file path"
-                value={sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
-                className="min-w-[200px] flex-1"
-                required
-              />
-              <Button type="submit">Add</Button>
+              <div className="space-y-1">
+                <Label className="text-xs">Type</Label>
+                <Select value={sourceType} onValueChange={(v) => setSourceType(v as Source['type'])}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="file">File / URL</SelectItem>
+                    <SelectItem value="hls">HLS Stream</SelectItem>
+                    <SelectItem value="rtmp">RTMP</SelectItem>
+                    <SelectItem value="rtsp">RTSP</SelectItem>
+                    <SelectItem value="device">Device</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1 flex-1 min-w-[200px]">
+                <Label className="text-xs">URL</Label>
+                <Input
+                  placeholder="URL or file path"
+                  value={sourceUrl}
+                  onChange={(e) => setSourceUrl(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" className="mt-auto">Add</Button>
             </form>
           )}
 
           {sourcesLoading ? (
-            <p className="text-muted-foreground">Loading sources...</p>
+            <div className="space-y-2">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <Skeleton key={i} className="h-24 w-full rounded-lg" />
+              ))}
+            </div>
           ) : sources && sources.length > 0 ? (
             <div className="space-y-2">
               {sources.map((source) => {
                 const output = outputs?.find((o) => o.source_id === source.id)
                 const job = jobs?.find((j) => j.source_id === source.id)
                 const isRunning = job?.status === 'running'
+                const isPaused = job?.status === 'paused'
+                const isStopped = job?.status === 'stopped'
                 const isCompleted = job?.status === 'completed'
-                const canPreview = isRunning || isCompleted
+                const canPreview = isRunning || isCompleted || isPaused || isStopped
 
                 return (
                   <div key={source.id} className="border rounded-lg p-4">
@@ -130,16 +144,7 @@ export default function ChannelDetail() {
                         <span className="font-medium">{source.type}</span>
                         <span className="text-muted-foreground ml-2 text-sm">{source.url}</span>
                       </div>
-                      {job && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          job.status === 'running' ? 'bg-blue-100 text-blue-700 animate-pulse' :
-                          job.status === 'completed' ? 'bg-green-100 text-green-700' :
-                          job.status === 'failed' ? 'bg-red-100 text-red-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {job.status}
-                        </span>
-                      )}
+                      {job && <Badge variant={job.status as 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'}>{job.status}</Badge>}
                     </div>
 
                     {!output && (
@@ -161,14 +166,26 @@ export default function ChannelDetail() {
                     )}
 
                     {canPreview && output && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        onClick={() => navigate(`/player/${output.id}`)}
-                      >
-                        <Play className="h-3 w-3 mr-1" /> View Stream
-                      </Button>
+                      <div className="mt-2 flex items-center gap-3">
+                        <div className="w-32 aspect-video bg-black rounded overflow-hidden relative shrink-0">
+                          <img
+                            src={`/api/stream/${output.id}/thumb.jpg`}
+                            alt=""
+                            className="w-full h-full object-contain"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <Play className="h-4 w-4 text-white/80" />
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigate(`/player/${output.id}`)}
+                        >
+                          <Play className="h-3 w-3 mr-1" /> View Stream
+                        </Button>
+                      </div>
                     )}
                   </div>
                 )

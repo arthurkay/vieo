@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../lib/api'
-import { Button } from '../components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Input } from '../components/ui/input'
-import { Select } from '../components/ui/select'
+import { api } from '@/lib/api'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Trash2 } from 'lucide-react'
-import type { Source } from '../types'
+import type { Source } from '@/types'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export default function Sources() {
   const queryClient = useQueryClient()
@@ -60,34 +62,36 @@ export default function Sources() {
               }}
               className="space-y-4"
             >
-              <div>
-                <label className="text-sm font-medium">Channel</label>
-                <Select
-                  options={[
-                    { value: '', label: 'Select channel...' },
-                    ...(channels?.map((c) => ({ value: String(c.id), label: c.name })) || []),
-                  ]}
-                  value={channelId}
-                  onChange={(e) => setChannelId(e.target.value)}
-                  required
-                />
+              <div className="space-y-2">
+                <Label>Channel</Label>
+                <Select value={channelId} onValueChange={setChannelId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select channel..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {channels?.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <label className="text-sm font-medium">Type</label>
-                <Select
-                  options={[
-                    { value: 'file', label: 'File / URL' },
-                    { value: 'hls', label: 'HLS Stream' },
-                    { value: 'rtmp', label: 'RTMP' },
-                    { value: 'rtsp', label: 'RTSP' },
-                    { value: 'device', label: 'Device' },
-                  ]}
-                  value={type}
-                  onChange={(e) => setType(e.target.value as Source['type'])}
-                />
+              <div className="space-y-2">
+                <Label>Type</Label>
+                <Select value={type} onValueChange={(v) => setType(v as Source['type'])}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="file">File / URL</SelectItem>
+                    <SelectItem value="hls">HLS Stream</SelectItem>
+                    <SelectItem value="rtmp">RTMP</SelectItem>
+                    <SelectItem value="rtsp">RTSP</SelectItem>
+                    <SelectItem value="device">Device</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <label className="text-sm font-medium">URL / Path</label>
+              <div className="space-y-2">
+                <Label>URL / Path</Label>
                 <Input
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
@@ -106,11 +110,15 @@ export default function Sources() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {isLoading ? (
-          <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              Loading sources...
-            </CardContent>
-          </Card>
+          Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="py-8">
+                <Skeleton className="h-5 w-24 mb-2" />
+                <Skeleton className="h-4 w-32 mb-2" />
+                <Skeleton className="h-8 w-full" />
+              </CardContent>
+            </Card>
+          ))
         ) : sources?.map((source) => (
           <Card key={source.id}>
             <CardHeader>

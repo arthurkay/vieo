@@ -105,6 +105,22 @@ func PauseJob(db *sql.DB, mgr *job.Manager) http.HandlerFunc {
 	}
 }
 
+func ResumeJob(db *sql.DB, mgr *job.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		if err := mgr.ResumePausedJob(r.Context(), id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func RetryJob(db *sql.DB, mgr *job.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)

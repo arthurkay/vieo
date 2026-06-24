@@ -1,8 +1,8 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import VideoPlayer from '../components/VideoPlayer'
-import JobStatusBadge from '../components/JobStatusBadge'
-import { Button } from '../components/ui/button'
+import VideoPlayer from '@/components/VideoPlayer'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 
 export default function Player() {
@@ -34,12 +34,13 @@ export default function Player() {
         </Button>
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold">Stream Player</h1>
-          {jobStatus && <JobStatusBadge status={jobStatus} />}
+          {jobStatus && <Badge variant={jobStatus as 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'}>{jobStatus}</Badge>}
         </div>
       </div>
       <div className="flex-1 p-4 min-h-0">
         <VideoPlayer
           streamUrl={`/api/stream/${id}/playlist.m3u8`}
+          posterUrl={`/api/stream/${id}/thumb.jpg`}
           isLive={isLive}
           className="w-full h-full max-h-[calc(100vh-8rem)]"
         />

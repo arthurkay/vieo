@@ -14,7 +14,7 @@ var progressRe = regexp.MustCompile(`time=(\d+):(\d+):(\d+)\.(\d+)`)
 
 type ProgressFn func(progress float64, logLine string)
 
-func Transcode(ctx context.Context, input, outputDir string, totalDuration float64, hasVideo bool, onProgress ProgressFn) error {
+func Transcode(ctx context.Context, input, outputDir string, totalDuration float64, hasVideo bool, startNumber int, onProgress ProgressFn) error {
 	playlist := fmt.Sprintf("%s/playlist.m3u8", outputDir)
 	segmentPattern := fmt.Sprintf("%s/seg_%%05d.ts", outputDir)
 
@@ -34,8 +34,11 @@ func Transcode(ctx context.Context, input, outputDir string, totalDuration float
 		"-hls_segment_filename", segmentPattern,
 		"-progress", "pipe:1",
 		"-loglevel", "warning",
-		playlist,
 	)
+	if startNumber > 0 {
+		args = append(args, "-start_number", strconv.Itoa(startNumber))
+	}
+	args = append(args, playlist)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
@@ -80,6 +83,22 @@ func Transcode(ctx context.Context, input, outputDir string, totalDuration float
 		return fmt.Errorf("ffmpeg exited: %w", err)
 	}
 
+	return nil
+}
+
+func GenerateThumbnail(ctx context.Context, input, outputPath string) error {
+	args := []string{
+		"-y",
+		"-i", input,
+		"-frames:v", "1",
+		"-q:v", "2",
+		outputPath,
+	}
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("generate thumbnail: %w: %s", err, strings.TrimSpace(string(out)))
+	}
 	return nil
 }
 

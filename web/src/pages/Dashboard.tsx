@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../lib/api'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { useWebSocket } from '../hooks/use-websocket'
+import { api } from '@/lib/api'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { useWebSocket } from '@/hooks/use-websocket'
 import { Radio, Video, Activity, CheckCircle, AlertCircle, PauseCircle, Play } from 'lucide-react'
-import type { Job } from '../types'
+import type { Job } from '@/types'
 
 export default function Dashboard() {
   const queryClient = useQueryClient()
@@ -18,7 +19,7 @@ export default function Dashboard() {
   const failed = jobs?.filter((j) => j.status === 'failed').length || 0
   const paused = jobs?.filter((j) => j.status === 'paused').length || 0
 
-  const liveJobs = jobs?.filter((j) => (j.status === 'completed' || j.status === 'running') && j.output_id) || []
+  const liveJobs = jobs?.filter((j) => (j.status === 'paused' ||j.status === 'completed' ||j.status === 'stopped' || j.status === 'running') && j.output_id) || []
 
   const stats = [
     { label: 'Channels', value: channels?.length || 0, icon: Radio, color: 'text-blue-600' },
@@ -85,10 +86,18 @@ export default function Dashboard() {
                     <span className="text-xs text-muted-foreground">Source #{job.source_id}</span>
                   </div>
                   <div
-                    className="aspect-video bg-black rounded-md flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity"
+                    className="aspect-video bg-black rounded-md relative overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
                     onClick={() => navigate(`/player/${job.output_id}`)}
                   >
-                    <Play className="h-10 w-10 text-white/80" />
+                    <img
+                      src={`/api/stream/${job.output_id}/thumb.jpg`}
+                      alt=""
+                      className="w-full h-full object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Play className="h-10 w-10 text-white/80 drop-shadow-lg" />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -112,14 +121,7 @@ export default function Dashboard() {
                       Source #{job.source_id}
                     </span>
                   </div>
-                  <span className={`text-sm px-2 py-0.5 rounded-full ${
-                    job.status === 'completed' ? 'bg-green-100 text-green-700' :
-                    job.status === 'running' ? 'bg-blue-100 text-blue-700 animate-pulse' :
-                    job.status === 'failed' ? 'bg-red-100 text-red-700' :
-                    'bg-gray-100 text-gray-700'
-                  }`}>
-                    {job.status}
-                  </span>
+                  <Badge variant={job.status as 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'}>{job.status}</Badge>
                 </div>
               ))}
             </div>
