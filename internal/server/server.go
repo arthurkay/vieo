@@ -104,8 +104,16 @@ func (s *Server) serveFrontend(w http.ResponseWriter, r *http.Request) {
 	fullPath := filepath.Join(frontendDir, path)
 
 	// Prevent path traversal
-	absFrontend, _ := filepath.Abs(frontendDir)
-	absFull, _ := filepath.Abs(fullPath)
+	absFrontend, err := filepath.Abs(frontendDir)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	absFull, err := filepath.Abs(fullPath)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	if len(absFull) < len(absFrontend) || absFull[:len(absFrontend)] != absFrontend {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return

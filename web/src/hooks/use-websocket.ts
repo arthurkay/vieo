@@ -7,6 +7,7 @@ export function useWebSocket(onEvent: EventHandler) {
   const wsRef = useRef<WebSocket | null>(null)
   const onEventRef = useRef(onEvent)
   onEventRef.current = onEvent
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const connect = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -24,7 +25,7 @@ export function useWebSocket(onEvent: EventHandler) {
 
     ws.onclose = () => {
       wsRef.current = null
-      setTimeout(connect, 3000)
+      timeoutRef.current = setTimeout(connect, 3000)
     }
 
     ws.onerror = () => ws.close()
@@ -34,6 +35,9 @@ export function useWebSocket(onEvent: EventHandler) {
   useEffect(() => {
     connect()
     return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
       wsRef.current?.close()
     }
   }, [connect])

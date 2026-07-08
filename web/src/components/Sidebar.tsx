@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { useTheme } from './theme-provider'
+import { Separator } from '@/components/ui/separator'
 import {
   LayoutDashboard,
   Radio,
@@ -58,12 +59,14 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
         )}
       >
         <div className="p-4 border-b flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">
-              <span className="text-muted-foreground">vie</span>
-              <span className="text-primary">o</span>
-            </h1>
-            <p className="text-xs text-muted-foreground mt-0.5">streaming platform</p>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-primary text-primary-foreground font-bold text-sm">
+              v
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight">vieo</h1>
+              <p className="text-[10px] text-muted-foreground -mt-0.5">streaming platform</p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -81,7 +84,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               end={link.to === '/'}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors',
+                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                   isActive
                     ? 'bg-accent text-accent-foreground'
                     : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
@@ -93,14 +96,16 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
             </NavLink>
           ))}
         </nav>
-        <div className="p-4 border-t space-y-2">
+        <div className="p-4 border-t space-y-3">
           <button
             onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            className="flex items-center gap-3 w-full px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
           >
             {resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             {resolvedTheme === 'dark' ? 'Light Mode' : 'Dark Mode'}
           </button>
+          <Separator />
           <div className="flex items-center gap-2 text-xs text-muted-foreground px-3">
             <HardDrive className="h-3 w-3" />
             v1.0.0

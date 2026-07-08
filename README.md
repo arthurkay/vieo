@@ -94,6 +94,7 @@ Configuration is loaded in order: **flags → environment variables → defaults
 | `-disk-warn` | `VIEO_DISK_WARN` | `90` | Disk usage % to pause jobs |
 | `-disk-crit` | `VIEO_DISK_CRIT` | `95` | Disk usage % to force-stop all jobs |
 | `-max-jobs` | `VIEO_MAX_JOBS` | `3` | Maximum concurrent transcoding jobs |
+| `-watermark` | `VIEO_WATERMARK` | `true` | Enable watermark overlay on video streams |
 
 Example:
 

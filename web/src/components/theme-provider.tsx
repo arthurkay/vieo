@@ -45,7 +45,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [resolvedTheme])
 
   useEffect(() => {
-    localStorage.setItem('theme', theme)
+    try {
+      localStorage.setItem('theme', theme)
+    } catch {
+      // localStorage may be unavailable in private browsing
+    }
   }, [theme])
 
   useEffect(() => {

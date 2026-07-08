@@ -29,6 +29,11 @@ func CreateOutput(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		if o.SourceID <= 0 {
+			http.Error(w, "source_id must be positive", http.StatusBadRequest)
+			return
+		}
+
 		if err := models.CreateOutput(r.Context(), db, &o); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -8,11 +8,14 @@ import (
 	"github.com/arthur/vieo/internal/disk"
 )
 
+var Version = "1.0.0"
+
 type healthResponse struct {
-	Status  string         `json:"status"`
-	Version string         `json:"version"`
-	Jobs    map[string]int `json:"jobs"`
-	Disk    *diskInfo      `json:"disk,omitempty"`
+	Status    string         `json:"status"`
+	Version   string         `json:"version"`
+	Jobs      map[string]int `json:"jobs"`
+	Disk      *diskInfo      `json:"disk,omitempty"`
+	Watermark bool           `json:"watermark"`
 }
 
 type diskInfo struct {
@@ -23,7 +26,7 @@ type diskInfo struct {
 	Crit         int     `json:"crit"`
 }
 
-func Health(db *sql.DB, dataDir string, diskWarn, diskCrit int) http.HandlerFunc {
+func Health(db *sql.DB, dataDir string, diskWarn, diskCrit int, watermark bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		jobCounts := map[string]int{"running": 0, "pending": 0, "completed": 0, "failed": 0, "paused": 0, "stopped": 0}
 
@@ -40,9 +43,10 @@ func Health(db *sql.DB, dataDir string, diskWarn, diskCrit int) http.HandlerFunc
 		}
 
 		resp := healthResponse{
-			Status:  "ok",
-			Version: "1.0.0",
-			Jobs:    jobCounts,
+			Status:    "ok",
+			Version:   Version,
+			Jobs:      jobCounts,
+			Watermark: watermark,
 		}
 
 		if usage, totalGB, freeGB, err := disk.Usage(dataDir); err == nil {
@@ -56,6 +60,8 @@ func Health(db *sql.DB, dataDir string, diskWarn, diskCrit int) http.HandlerFunc
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			return
+		}
 	}
 }

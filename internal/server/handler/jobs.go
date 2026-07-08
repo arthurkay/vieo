@@ -11,9 +11,19 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+var validStatuses = map[string]bool{
+	"pending": true, "running": true, "paused": true,
+	"completed": true, "failed": true, "stopped": true,
+}
+
 func ListJobs(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		status := r.URL.Query().Get("status")
+		if status != "" && !validStatuses[status] {
+			http.Error(w, "invalid status value", http.StatusBadRequest)
+			return
+		}
+
 		var sourceID *int64
 		if sid := r.URL.Query().Get("source_id"); sid != "" {
 			id, err := strconv.ParseInt(sid, 10, 64)
@@ -137,12 +147,39 @@ func RetryJob(db *sql.DB, mgr *job.Manager) http.HandlerFunc {
 	}
 }
 
-func DeleteJob(db *sql.DB) http.HandlerFunc {
+func ListJobLogs(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
 			http.Error(w, "invalid id", http.StatusBadRequest)
 			return
+		}
+
+		logs, err := models.ListJobLogs(r.Context(), db, id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, logs)
+	}
+}
+
+func DeleteJob(db *sql.DB, mgr *job.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		job, err := models.GetJob(r.Context(), db, id)
+		if err != nil {
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+
+		if job.Status == "running" || job.Status == "pending" {
+			_ = mgr.StopJob(r.Context(), id)
 		}
 
 		if err := models.DeleteJob(r.Context(), db, id); err != nil {

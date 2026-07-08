@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Server) setupRoutes() {
-	s.Router.Get("/api/health", handler.Health(s.DB, s.Config.DataDir, s.Config.DiskWarn, s.Config.DiskCrit))
+	s.Router.Get("/api/health", handler.Health(s.DB, s.Config.DataDir, s.Config.DiskWarn, s.Config.DiskCrit, s.Config.Watermark))
 
 	s.Router.Route("/api/channels", func(r chi.Router) {
 		r.Use(chimw.Timeout(60 * time.Second))
@@ -43,7 +43,8 @@ func (s *Server) setupRoutes() {
 		r.Post("/{id}/pause", handler.PauseJob(s.DB, s.Manager))
 		r.Post("/{id}/resume", handler.ResumeJob(s.DB, s.Manager))
 		r.Post("/{id}/retry", handler.RetryJob(s.DB, s.Manager))
-		r.Delete("/{id}", handler.DeleteJob(s.DB))
+		r.Get("/{id}/logs", handler.ListJobLogs(s.DB))
+		r.Delete("/{id}", handler.DeleteJob(s.DB, s.Manager))
 	})
 
 	s.Router.Get("/api/stream/{id}/*", handler.StreamHLS(s.Config.DataDir))

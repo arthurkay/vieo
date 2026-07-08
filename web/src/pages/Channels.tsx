@@ -6,7 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Plus, Edit2, Trash2, ExternalLink } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Plus, MoreHorizontal, Pencil, Trash2, ExternalLink } from 'lucide-react'
 
 export default function Channels() {
   const queryClient = useQueryClient()
@@ -16,7 +19,7 @@ export default function Channels() {
   const [slug, setSlug] = useState('')
   const [description, setDescription] = useState('')
 
-  const { data: channels } = useQuery({ queryKey: ['channels'], queryFn: api.channels.list })
+  const { data: channels, isLoading } = useQuery({ queryKey: ['channels'], queryFn: api.channels.list })
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; slug: string; description: string }) =>
@@ -25,6 +28,7 @@ export default function Channels() {
       queryClient.invalidateQueries({ queryKey: ['channels'] })
       resetForm()
     },
+    onError: (err: Error) => alert(`Create failed: ${err.message}`),
   })
 
   const updateMutation = useMutation({
@@ -34,11 +38,13 @@ export default function Channels() {
       queryClient.invalidateQueries({ queryKey: ['channels'] })
       resetForm()
     },
+    onError: (err: Error) => alert(`Update failed: ${err.message}`),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.channels.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['channels'] }),
+    onError: (err: Error) => alert(`Delete failed: ${err.message}`),
   })
 
   function resetForm() {
@@ -66,71 +72,116 @@ export default function Channels() {
     }
   }
 
+  const isMutating = createMutation.isPending || updateMutation.isPending
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Channels</h2>
-          <p className="text-muted-foreground">Manage your content channels</p>
+    <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
+      <div className="px-4 lg:px-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Channels</h2>
+            <p className="text-muted-foreground">Manage your content channels</p>
+          </div>
+          <Button onClick={() => { resetForm(); setShowForm(true) }}>
+            <Plus className="h-4 w-4 mr-2" /> New Channel
+          </Button>
         </div>
-        <Button onClick={() => { resetForm(); setShowForm(true) }}>
-          <Plus className="h-4 w-4 mr-2" /> New Channel
-        </Button>
       </div>
 
       {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{editId ? 'Edit Channel' : 'Create Channel'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Name</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Slug</Label>
-                <Input value={slug} onChange={(e) => setSlug(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Description</Label>
-                <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-              </div>
-              <div className="flex gap-2">
-                <Button type="submit">{editId ? 'Update' : 'Create'}</Button>
-                <Button variant="outline" onClick={resetForm}>Cancel</Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-        {channels?.map((ch) => (
-          <Card key={ch.id}>
+        <div className="px-4 lg:px-6">
+          <Card>
             <CardHeader>
-              <CardTitle className="text-lg">{ch.name}</CardTitle>
-              <p className="text-sm text-muted-foreground truncate">{ch.slug}</p>
+              <CardTitle>{editId ? 'Edit Channel' : 'Create Channel'}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{ch.description || 'No description'}</p>
-              <div className="flex gap-2">
-                <Link to={`/channels/${ch.id}`}>
-                  <Button variant="outline" size="sm" className="min-h-9">
-                    <ExternalLink className="h-3 w-3 mr-1" /> View
-                  </Button>
-                </Link>
-                <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={() => startEdit(ch)}>
-                  <Edit2 className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="sm" className="min-h-9 min-w-9" onClick={() => deleteMutation.mutate(ch.id)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="channel-name">Name</Label>
+                    <Input id="channel-name" value={name} onChange={(e) => setName(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="channel-slug">Slug</Label>
+                    <Input id="channel-slug" value={slug} onChange={(e) => setSlug(e.target.value)} required pattern="[a-z0-9\-]+" title="Lowercase letters, numbers, and hyphens only" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="channel-desc">Description</Label>
+                    <Input id="channel-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={isMutating}>{editId ? 'Update' : 'Create'}</Button>
+                  <Button variant="outline" onClick={resetForm}>Cancel</Button>
+                </div>
+              </form>
             </CardContent>
           </Card>
-        ))}
+        </div>
+      )}
+
+      <div className="px-4 lg:px-6">
+        <Card>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="p-4 space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : channels && channels.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Slug</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="w-[50px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {channels.map((ch) => (
+                    <TableRow key={ch.id}>
+                      <TableCell className="font-medium">{ch.name}</TableCell>
+                      <TableCell className="text-muted-foreground font-mono text-xs">{ch.slug}</TableCell>
+                      <TableCell className="text-muted-foreground max-w-[300px] truncate">{ch.description || '—'}</TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                              <span className="sr-only">Actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                              <Link to={`/channels/${ch.id}`}>
+                                <ExternalLink className="mr-2 h-4 w-4" /> View
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => startEdit(ch)}>
+                              <Pencil className="mr-2 h-4 w-4" /> Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => { if (confirm(`Delete channel "${ch.name}"?`)) deleteMutation.mutate(ch.id) }}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                No channels yet. Create one to get started.
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { Plus, Play } from 'lucide-react'
 import type { Source } from '@/types'
@@ -23,7 +24,7 @@ export default function ChannelDetail() {
   const [sourceType, setSourceType] = useState<Source['type']>('file')
   const [sourceUrl, setSourceUrl] = useState('')
 
-  const { data: channel } = useQuery({
+  const { data: channel, isLoading: channelLoading } = useQuery({
     queryKey: ['channel', channelId],
     queryFn: () => api.channels.get(channelId),
     enabled: !!channelId,
@@ -56,9 +57,12 @@ export default function ChannelDetail() {
     onError: (err: Error) => alert(`Create source failed: ${err.message}`),
   })
 
-  const createJobMutation = useMutation({
-    mutationFn: ({ sourceId, outputId }: { sourceId: number; outputId: number }) =>
-      api.jobs.create(sourceId, outputId),
+  const startTranscodeMutation = useMutation({
+    mutationFn: async ({ sourceId }: { sourceId: number }) => {
+      const newOutput = await api.outputs.create({ source_id: sourceId, type: 'hls', path: '' })
+      queryClient.invalidateQueries({ queryKey: ['outputs'] })
+      return api.jobs.create(sourceId, newOutput.id)
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
     onError: (err: Error) => alert(`Start transcoding failed: ${err.message}`),
   })
@@ -69,135 +73,141 @@ export default function ChannelDetail() {
     }
   })
 
+  const isSourceFormMutating = createSourceMutation.isPending
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">{channel?.name || 'Channel'}</h2>
-        <p className="text-muted-foreground">{channel?.description}</p>
+    <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
+      <div className="px-4 lg:px-6">
+        {channelLoading ? (
+          <Skeleton className="h-8 w-48" />
+        ) : (
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">{channel?.name || 'Channel not found'}</h2>
+            <p className="text-muted-foreground">{channel?.description}</p>
+          </div>
+        )}
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Sources</CardTitle>
-          <Button size="sm" onClick={() => setShowSourceForm(!showSourceForm)}>
-            <Plus className="h-4 w-4 mr-1" /> Add Source
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {showSourceForm && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                createSourceMutation.mutate({ channel_id: channelId, type: sourceType, url: sourceUrl })
-              }}
-              className="flex flex-col sm:flex-row gap-2 mb-4"
-            >
-              <div className="space-y-1 shrink-0">
-                <Label className="text-xs">Type</Label>
-                <Select value={sourceType} onValueChange={(v) => setSourceType(v as Source['type'])}>
-                  <SelectTrigger className="w-full sm:w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="file">File / URL</SelectItem>
-                    <SelectItem value="hls">HLS Stream</SelectItem>
-                    <SelectItem value="rtmp">RTMP</SelectItem>
-                    <SelectItem value="rtsp">RTSP</SelectItem>
-                    <SelectItem value="device">Device</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1 flex-1 min-w-0">
-                <Label className="text-xs">URL</Label>
-                <Input
-                  placeholder="URL or file path"
-                  value={sourceUrl}
-                  onChange={(e) => setSourceUrl(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="mt-auto sm:self-end">Add</Button>
-            </form>
-          )}
-
-          {sourcesLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 2 }).map((_, i) => (
-                <Skeleton key={i} className="h-24 w-full rounded-lg" />
-              ))}
-            </div>
-          ) : sources && sources.length > 0 ? (
-            <div className="space-y-2">
-              {sources.map((source) => {
-                const output = outputs?.find((o) => o.source_id === source.id)
-                const job = jobs?.find((j) => j.source_id === source.id)
-                const isRunning = job?.status === 'running'
-                const isPaused = job?.status === 'paused'
-                const isStopped = job?.status === 'stopped'
-                const isCompleted = job?.status === 'completed'
-                const canPreview = isRunning || isCompleted || isStopped || isPaused
-
-                return (
-                  <div key={source.id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="min-w-0">
-                        <span className="font-medium">{source.type}</span>
-                        <span className="text-muted-foreground ml-2 text-sm break-all line-clamp-2">{source.url}</span>
-                      </div>
-                      {job && <Badge variant={job.status as 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'}>{job.status}</Badge>}
-                    </div>
-
-                    {!output && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="min-h-9"
-                        onClick={async () => {
-                          const newOutput = await api.outputs.create({
-                            source_id: source.id,
-                            type: 'hls',
-                            path: '',
-                          })
-                          queryClient.invalidateQueries({ queryKey: ['outputs'] })
-                          createJobMutation.mutate({ sourceId: source.id, outputId: newOutput.id })
-                        }}
-                      >
-                        Start Transcoding
-                      </Button>
-                    )}
-
-                    {canPreview && output && (
-                      <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-3">
-                        <div className="w-full sm:w-32 aspect-video bg-black rounded overflow-hidden relative shrink-0">
-                          <img
-                            src={`/api/stream/${output.id}/thumb.jpg`}
-                            alt=""
-                            className="w-full h-full object-contain"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <Play className="h-4 w-4 text-white/80" />
-                          </div>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="min-h-9"
-                          onClick={() => navigate(`/player/${output.id}`)}
-                        >
-                          <Play className="h-3 w-3 mr-1" /> View Stream
-                        </Button>
-                      </div>
-                    )}
+      <div className="px-4 lg:px-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Sources</CardTitle>
+            <Button size="sm" onClick={() => setShowSourceForm(!showSourceForm)}>
+              <Plus className="h-4 w-4 mr-1" /> Add Source
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {showSourceForm && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (!sourceUrl.trim()) return
+                  createSourceMutation.mutate({ channel_id: channelId, type: sourceType, url: sourceUrl.trim() })
+                }}
+                className="mb-4 p-4 border rounded-lg bg-muted/50"
+              >
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Type</Label>
+                    <Select value={sourceType} onValueChange={(v) => setSourceType(v as Source['type'])}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="file">File / URL</SelectItem>
+                        <SelectItem value="hls">HLS Stream</SelectItem>
+                        <SelectItem value="rtmp">RTMP</SelectItem>
+                        <SelectItem value="rtsp">RTSP</SelectItem>
+                        <SelectItem value="device">Device</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                )
-              })}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No sources configured</p>
-          )}
-        </CardContent>
-      </Card>
+                  <div className="space-y-2">
+                    <Label className="text-xs">URL</Label>
+                    <Input placeholder="URL or file path" value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} required />
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <Button type="submit" disabled={isSourceFormMutating}>
+                      {isSourceFormMutating ? 'Adding...' : 'Add'}
+                    </Button>
+                    <Button variant="outline" type="button" onClick={() => setShowSourceForm(false)}>Cancel</Button>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {sourcesLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : sources && sources.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>URL</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-[120px]">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sources.map((source) => {
+                    const output = outputs?.find((o) => o.source_id === source.id)
+                    const sourceJobs = jobs?.filter((j) => j.source_id === source.id) || []
+                    const latestJob = sourceJobs[0]
+                    const isRunning = latestJob?.status === 'running'
+                    const isPaused = latestJob?.status === 'paused'
+                    const isStopped = latestJob?.status === 'stopped'
+                    const isCompleted = latestJob?.status === 'completed'
+                    const canPreview = isRunning || isCompleted || isStopped || isPaused
+
+                    return (
+                      <TableRow key={source.id}>
+                        <TableCell className="font-medium">#{source.id}</TableCell>
+                        <TableCell className="capitalize">{source.type}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground max-w-[300px] truncate" title={source.url}>{source.url}</TableCell>
+                        <TableCell>
+                          {latestJob && <Badge variant={latestJob.status}>{latestJob.status}</Badge>}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {!output && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                disabled={startTranscodeMutation.isPending}
+                                onClick={() => startTranscodeMutation.mutate({ sourceId: source.id })}
+                              >
+                                {startTranscodeMutation.isPending ? 'Starting...' : 'Start'}
+                              </Button>
+                            )}
+                            {canPreview && output && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7"
+                                onClick={() => navigate(`/player/${output.id}`)}
+                              >
+                                <Play className="h-3 w-3 mr-1" /> Play
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">No sources configured</div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

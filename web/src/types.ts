@@ -26,11 +26,13 @@ export interface Output {
   created_at: string
 }
 
+export type JobStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'
+
 export interface Job {
   id: number
   source_id: number
   output_id: number
-  status: 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'
+  status: JobStatus
   progress: number
   error_msg: string
   pid: number
@@ -38,7 +40,51 @@ export interface Job {
   ended_at: string | null
 }
 
+export interface JobLog {
+  id: number
+  job_id: number
+  level: string
+  message: string
+  created_at: string
+}
+
+export interface JobUpdatePayload {
+  id: number
+  status?: JobStatus
+  progress?: number
+}
+
+export interface JobLogPayload {
+  id: number
+  level: string
+  message: string
+}
+
+export interface JobCompletePayload {
+  id: number
+  status: JobStatus
+}
+
+export interface JobErrorPayload {
+  id: number
+  status: JobStatus
+  error: string
+}
+
+export interface JobPausedPayload {
+  id: number
+  status: JobStatus
+  reason: string
+}
+
+export type JobEventPayload =
+  | JobUpdatePayload
+  | JobLogPayload
+  | JobCompletePayload
+  | JobErrorPayload
+  | JobPausedPayload
+
 export interface JobEvent {
   type: string
-  payload: Record<string, unknown>
+  payload: JobEventPayload
 }

@@ -27,18 +27,20 @@ export default function StorageBanner() {
           ? 'bg-destructive/10 text-destructive border-destructive/20'
           : 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800',
       )}
+      role="alert"
+      aria-live={isCritical ? 'assertive' : 'polite'}
     >
       {isCritical ? (
-        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
       ) : (
-        <HardDrive className="h-4 w-4 shrink-0" />
+        <HardDrive className="h-4 w-4 shrink-0" aria-hidden="true" />
       )}
       <span>
         {isCritical
           ? `Critical disk usage: ${usage.toFixed(1)}% — jobs are being stopped`
           : `Disk usage at ${usage.toFixed(1)}% — transcoding jobs paused`}
       </span>
-      <span className="text-xs opacity-60 ml-auto">
+      <span className="text-xs opacity-60 ml-auto shrink-0">
         {disk.free_gb.toFixed(1)} GB free of {disk.total_gb.toFixed(0)} GB
       </span>
     </div>

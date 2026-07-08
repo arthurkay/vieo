@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/arthur/vieo/internal/db/models"
 	"github.com/go-chi/chi/v5"
@@ -43,6 +44,18 @@ func CreateChannel(db *sql.DB) http.HandlerFunc {
 		var c models.Channel
 		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+
+		c.Name = strings.TrimSpace(c.Name)
+		c.Slug = strings.TrimSpace(c.Slug)
+
+		if c.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		if c.Slug == "" {
+			http.Error(w, "slug is required", http.StatusBadRequest)
 			return
 		}
 

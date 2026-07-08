@@ -198,7 +198,9 @@ func PrepareResume(dir string) (int, error) {
 	defer f2.Close()
 
 	for _, l := range cleaned {
-		fmt.Fprintln(f2, l)
+		if _, err := fmt.Fprintln(f2, l); err != nil {
+			return 0, fmt.Errorf("write playlist line: %w", err)
+		}
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -213,7 +215,9 @@ func PrepareResume(dir string) (int, error) {
 
 		if len(segNames) > 1 {
 			for _, name := range segNames[:len(segNames)-1] {
-				os.Remove(filepath.Join(dir, name))
+				if err := os.Remove(filepath.Join(dir, name)); err != nil {
+					return 0, fmt.Errorf("remove segment %s: %w", name, err)
+				}
 			}
 		}
 	}

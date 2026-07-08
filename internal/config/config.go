@@ -3,6 +3,7 @@ package config
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 )
@@ -15,6 +16,7 @@ type Config struct {
 	DiskWarn  int
 	DiskCrit  int
 	MaxJobs   int
+	Watermark bool
 }
 
 func Load() (*Config, error) {
@@ -27,6 +29,7 @@ func Load() (*Config, error) {
 	flag.IntVar(&c.DiskWarn, "disk-warn", envInt("VIEO_DISK_WARN", 90), "Disk usage % to pause jobs")
 	flag.IntVar(&c.DiskCrit, "disk-crit", envInt("VIEO_DISK_CRIT", 95), "Disk usage % to stop jobs")
 	flag.IntVar(&c.MaxJobs, "max-jobs", envInt("VIEO_MAX_JOBS", 3), "Maximum concurrent transcoding jobs")
+	flag.BoolVar(&c.Watermark, "watermark", envBool("VIEO_WATERMARK", true), "Enable watermark overlay on video streams")
 	flag.Parse()
 
 	if c.DiskWarn <= 0 || c.DiskWarn > 100 {
@@ -55,9 +58,23 @@ func envStr(key, def string) string {
 func envInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		n, err := strconv.Atoi(v)
-		if err == nil {
-			return n
+		if err != nil {
+			log.Printf("warning: invalid integer for %s=%q, using default %d", key, v, def)
+			return def
 		}
+		return n
+	}
+	return def
+}
+
+func envBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			log.Printf("warning: invalid boolean for %s=%q, using default %v", key, v, def)
+			return def
+		}
+		return b
 	}
 	return def
 }

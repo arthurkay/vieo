@@ -147,7 +147,11 @@ DELETE /api/outputs/{id}      # Delete output
 GET    /api/jobs              # List jobs (filter by ?status=, ?source_id=)
 POST   /api/jobs              # Create + start job
 POST   /api/jobs/{id}/stop    # Stop job
-DELETE /api/jobs/{id}         # Delete job record
+POST   /api/jobs/{id}/pause   # Pause job (finalizes playlist)
+POST   /api/jobs/{id}/resume  # Resume paused job (continues from last segment)
+POST   /api/jobs/{id}/retry   # Retry failed/stopped/completed job
+GET    /api/jobs/{id}/logs    # List job logs
+DELETE /api/jobs/{id}         # Delete job record (stops if running)
 
 GET    /api/stream/{id}/*     # Serve HLS files (.m3u8, .ts)
 
@@ -161,6 +165,7 @@ WS     /api/ws                # Real-time job status updates
 {"type":"job:log","payload":{"id":1,"level":"info","message":"segment 42"}}
 {"type":"job:complete","payload":{"id":1,"status":"completed"}}
 {"type":"job:error","payload":{"id":1,"status":"failed","error":"..."}}
+{"type":"job:paused","payload":{"id":1,"status":"paused","reason":"interrupted"}}
 ```
 
 ## Job State Machine
@@ -206,3 +211,4 @@ WS     /api/ws                # Real-time job status updates
 | `VIEO_DISK_WARN` | `90` | Disk usage % to trigger pause |
 | `VIEO_DISK_CRIT` | `95` | Disk usage % to force stop |
 | `VIEO_MAX_JOBS` | `3` | Maximum concurrent transcoding jobs |
+| `VIEO_WATERMARK` | `true` | Enable watermark overlay on video streams |

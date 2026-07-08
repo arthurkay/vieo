@@ -1,4 +1,4 @@
-import type { Channel, Source, Output, Job } from '@/types'
+import type { Channel, Source, Output, Job, JobLog } from '@/types'
 
 const BASE = '/api'
 
@@ -6,6 +6,7 @@ interface HealthResponse {
   status: string
   version: string
   jobs: Record<string, number>
+  watermark: boolean
   disk?: {
     usage_percent: number
     total_gb: number
@@ -61,8 +62,13 @@ export const api = {
   },
 
   jobs: {
-    list: (status?: string) =>
-      request<Job[]>(`/jobs${status ? `?status=${status}` : ''}`),
+    list: (status?: string, sourceId?: number) => {
+      const params = new URLSearchParams()
+      if (status) params.set('status', status)
+      if (sourceId) params.set('source_id', String(sourceId))
+      const qs = params.toString()
+      return request<Job[]>(`/jobs${qs ? `?${qs}` : ''}`)
+    },
     create: (sourceId: number, outputId: number) =>
       request<Job>('/jobs', {
         method: 'POST',
@@ -78,5 +84,7 @@ export const api = {
       request<void>(`/jobs/${id}/retry`, { method: 'POST' }),
     delete: (id: number) =>
       request<void>(`/jobs/${id}`, { method: 'DELETE' }),
+    logs: (id: number) =>
+      request<JobLog[]>(`/jobs/${id}/logs`),
   },
 }

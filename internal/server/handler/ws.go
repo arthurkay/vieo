@@ -37,12 +37,17 @@ func StartBroadcastLoop(ctx context.Context, mgr *job.Manager) {
 				}
 
 				hub.mu.RLock()
+				clients := make([]*websocket.Conn, 0, len(hub.clients))
 				for c := range hub.clients {
+					clients = append(clients, c)
+				}
+				hub.mu.RUnlock()
+
+				for _, c := range clients {
 					if err := c.Write(ctx, websocket.MessageText, data); err != nil {
 						log.Printf("ws write: %v", err)
 					}
 				}
-				hub.mu.RUnlock()
 			}
 		}
 	}()
@@ -71,7 +76,6 @@ func WebSocket(db *sql.DB, mgr *job.Manager) http.HandlerFunc {
 
 		ctx := r.Context()
 
-		// Read loop (for pong/ping and client messages)
 		for {
 			_, _, err := conn.Read(ctx)
 			if err != nil {

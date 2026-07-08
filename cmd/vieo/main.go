@@ -54,6 +54,7 @@ func main() {
 		log.Println("shutting down...")
 		mgr.StopAll(ctx)
 		cancel()
+		mgr.Wait()
 	}()
 
 	log.Fatal(srv.Start(ctx))

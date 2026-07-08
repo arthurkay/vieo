@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -93,7 +94,10 @@ func (db *DB) migrate(ctx context.Context) error {
 	}
 	// Idempotent ALTER TABLE for existing DBs — skip if column exists
 	var hasCol int
-	db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sources') WHERE name='stream_type'").Scan(&hasCol)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sources') WHERE name='stream_type'").Scan(&hasCol); err != nil {
+		log.Printf("check stream_type column: %v", err)
+		hasCol = 1 // assume column exists to avoid destructive ALTER
+	}
 	if hasCol == 0 {
 		if _, err := db.ExecContext(ctx,
 			"ALTER TABLE sources ADD COLUMN stream_type TEXT NOT NULL DEFAULT 'audio_video' CHECK(stream_type IN ('audio_video','audio_only','video_only'))",
