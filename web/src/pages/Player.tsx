@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import VideoPlayer from '@/components/VideoPlayer'
 import { Badge } from '@/components/ui/badge'
@@ -8,8 +8,12 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
-import { ArrowLeft, Radio, Activity, Clock, Calendar } from 'lucide-react'
-import type { JobStatus } from '@/types'
+import { ArrowLeft, Radio, Activity, Clock, Calendar, Bookmark, Trash2, MapPin } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
+import { useWebSocket } from '@/hooks/use-websocket'
+import type { JobStatus, JobEvent } from '@/types'
+
+const EVENT_COLORS = ['#3b82f6', '#22c55e', '#ef4444', '#eab308', '#a855f7']
 
 function SourceName({ sourceId }: { sourceId: number }) {
   const { data: sources } = useQuery({
@@ -24,6 +28,8 @@ function SourceName({ sourceId }: { sourceId: number }) {
 export default function Player() {
   const { outputId } = useParams<{ outputId: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
   const id = parseInt(outputId || '0')
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
 
@@ -31,12 +37,39 @@ export default function Player() {
   const [jumpTime, setJumpTime] = useState(() => new Date().toTimeString().slice(0, 8))
   const [showJump, setShowJump] = useState(false)
 
+  const [showEventForm, setShowEventForm] = useState(false)
+  const [eventLabel, setEventLabel] = useState('')
+  const [eventColor, setEventColor] = useState(EVENT_COLORS[0])
+
   const { data: jobs } = useQuery({
     queryKey: ['jobs'],
     queryFn: () => api.jobs.list(),
   })
 
   const job = jobs?.find((j) => j.output_id === id && j.status !== 'stopped')
+
+  const { data: events = [] } = useQuery({
+    queryKey: ['job-events', job?.id],
+    queryFn: () => api.events.listByJob(job!.id),
+    enabled: !!job?.id,
+  })
+
+  const createEventMutation = useMutation({
+    mutationFn: (data: { time_offset: number; label: string; color: string }) =>
+      api.events.create(job!.id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-events', job?.id] })
+      setShowEventForm(false)
+      setEventLabel('')
+    },
+  })
+
+  const deleteEventMutation = useMutation({
+    mutationFn: (id: number) => api.events.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-events', job?.id] })
+    },
+  })
 
   useEffect(() => {
     if (job) {
@@ -68,6 +101,46 @@ export default function Player() {
       }
     }
   }, [job?.created_at, jumpDate, jumpTime])
+
+  const handleExport = useCallback((startTime: number, duration: number) => {
+    if (!job) return
+    api.exports.create({
+      source_id: job.source_id,
+      output_id: job.output_id,
+      start_time: startTime,
+      duration: duration,
+    }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ['exports'] })
+    }).catch(() => {})
+  }, [job, queryClient])
+
+  const handleAddEvent = useCallback(() => {
+    if (!eventLabel.trim()) return
+    const video = document.querySelector('video')
+    const currentTime = video ? video.currentTime : 0
+    createEventMutation.mutate({
+      time_offset: currentTime,
+      label: eventLabel.trim(),
+      color: eventColor,
+    })
+  }, [eventLabel, eventColor, createEventMutation])
+
+  const handleSeekToEvent = useCallback((offset: number) => {
+    const video = document.querySelector('video')
+    if (video) {
+      video.currentTime = offset
+      video.play().catch(() => {})
+    }
+  }, [])
+
+  useWebSocket((event: JobEvent) => {
+    if (event.type === 'job:update' && 'id' in event.payload) {
+      const p = event.payload as { id: number; status?: string; progress?: number }
+      if (job && p.id === job.id && p.status) {
+        setJobStatus(p.status as JobStatus)
+      }
+    }
+  })
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -115,6 +188,9 @@ export default function Player() {
             posterUrl={`/api/stream/${id}/thumb.jpg`}
             isLive={isLive}
             startTime={job?.created_at}
+            events={events}
+            onExport={!isLive ? handleExport : undefined}
+            showExportButton={user?.role === 'admin' && !isLive}
             className="w-full h-full max-h-[calc(100vh-5rem)] sm:max-h-[calc(100vh-8rem)]"
           />
         </div>
@@ -172,8 +248,102 @@ export default function Player() {
               </CardContent>
             </Card>
           )}
+
+          {/* Events section */}
+          <Card className="bg-muted/50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs text-muted-foreground">Events</div>
+                {user?.role === 'admin' && !isLive && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setShowEventForm(!showEventForm)}
+                  >
+                    <Bookmark className="h-3 w-3 mr-1" />
+                    Add
+                  </Button>
+                )}
+              </div>
+
+              {showEventForm && (
+                <div className="space-y-2 mb-3">
+                  <Input
+                    value={eventLabel}
+                    onChange={(e) => setEventLabel(e.target.value)}
+                    placeholder="Event label"
+                    className="h-7 text-xs"
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddEvent()}
+                  />
+                  <div className="flex gap-1">
+                    {EVENT_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        className={cn(
+                          'w-5 h-5 rounded-full border-2',
+                          eventColor === c ? 'border-white' : 'border-transparent',
+                        )}
+                        style={{ backgroundColor: c }}
+                        onClick={() => setEventColor(c)}
+                      />
+                    ))}
+                  </div>
+                  <Button
+                    size="sm"
+                    className="h-7 w-full text-xs"
+                    onClick={handleAddEvent}
+                    disabled={!eventLabel.trim() || createEventMutation.isPending}
+                  >
+                    Save Event
+                  </Button>
+                </div>
+              )}
+
+              {events.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No events</div>
+              ) : (
+                <div className="space-y-1">
+                  {events.map((ev) => (
+                    <div
+                      key={ev.id}
+                      className="flex items-center gap-2 text-xs group cursor-pointer hover:bg-muted/50 rounded p-1 -m-1"
+                      onClick={() => handleSeekToEvent(ev.time_offset)}
+                    >
+                      <MapPin className="h-3 w-3 shrink-0" style={{ color: ev.color }} />
+                      <span className="truncate flex-1">{ev.label}</span>
+                      <span className="text-muted-foreground shrink-0">{formatTime(ev.time_offset)}</span>
+                      {user?.role === 'admin' && (
+                        <button
+                          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                          onClick={(e) => { e.stopPropagation(); deleteEventMutation.mutate(ev.id) }}
+                        >
+                          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
   )
+}
+
+function formatTime(seconds: number): string {
+  if (!isFinite(seconds) || seconds < 0) return '0:00'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${m}:${String(s)}`
+}
+
+function cn(...classes: (string | boolean | undefined)[]) {
+  return classes.filter(Boolean).join(' ')
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,11 +19,14 @@ import (
 type EventType string
 
 const (
-	EventUpdate   EventType = "job:update"
-	EventLog      EventType = "job:log"
-	EventComplete EventType = "job:complete"
-	EventError    EventType = "job:error"
-	EventPaused   EventType = "job:paused"
+	EventUpdate         EventType = "job:update"
+	EventLog            EventType = "job:log"
+	EventComplete       EventType = "job:complete"
+	EventError          EventType = "job:error"
+	EventPaused         EventType = "job:paused"
+	EventExportProgress EventType = "export:progress"
+	EventExportComplete EventType = "export:complete"
+	EventExportError    EventType = "export:error"
 )
 
 type JobEvent struct {
@@ -36,23 +41,25 @@ type Manager struct {
 	DiskWarn int
 	DiskCrit int
 
-	mu      sync.Mutex
-	running map[int64]context.CancelFunc
-	sem     chan struct{}
-	events  chan JobEvent
-	wg      sync.WaitGroup
+	mu           sync.Mutex
+	running      map[int64]context.CancelFunc
+	exportRunning map[int64]context.CancelFunc
+	sem          chan struct{}
+	events       chan JobEvent
+	wg           sync.WaitGroup
 }
 
 func NewManager(db *sql.DB, dataDir string, maxJobs, diskWarn, diskCrit int) *Manager {
 	return &Manager{
-		DB:       db,
-		DataDir:  dataDir,
-		MaxJobs:  maxJobs,
-		DiskWarn: diskWarn,
-		DiskCrit: diskCrit,
-		running:  make(map[int64]context.CancelFunc),
-		sem:      make(chan struct{}, maxJobs),
-		events:   make(chan JobEvent, 100),
+		DB:            db,
+		DataDir:       dataDir,
+		MaxJobs:       maxJobs,
+		DiskWarn:      diskWarn,
+		DiskCrit:      diskCrit,
+		running:       make(map[int64]context.CancelFunc),
+		exportRunning: make(map[int64]context.CancelFunc),
+		sem:           make(chan struct{}, maxJobs),
+		events:        make(chan JobEvent, 100),
 	}
 }
 
@@ -330,7 +337,8 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 	hasVideo := true
 	var tcExtra media.TranscodeConfig
 
-	if source.Type == "device" {
+	switch source.Type {
+	case "device":
 		probeCtx, probeCancel := context.WithTimeout(ctx, 10*time.Second)
 		info, devInfo, pErr := media.ProbeDevice(probeCtx, source.URL)
 		probeCancel()
@@ -355,7 +363,53 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 		}
 
 		totalDuration = 0
-	} else {
+	case "udp", "rtp", "srt":
+		probeCtx, probeCancel := context.WithTimeout(ctx, 15*time.Second)
+		info, pErr := media.ProbeNetworkStream(probeCtx, source.URL, source.Type)
+		probeCancel()
+
+		if pErr != nil {
+			log.Printf("probe network stream job %d: %v, continuing without probe data", jobID, pErr)
+		} else {
+			totalDuration = 0
+			hasVideo = info.HasVideo()
+			hasAudio := info.HasAudio()
+
+			var newStreamType string
+			if hasVideo && hasAudio {
+				newStreamType = "audio_video"
+			} else if hasVideo {
+				newStreamType = "video_only"
+			} else if hasAudio {
+				newStreamType = "audio_only"
+			} else {
+				newStreamType = "audio_video"
+			}
+			if newStreamType != source.StreamType {
+				_ = models.UpdateSourceStreamType(ctx, m.DB, sourceID, newStreamType)
+			}
+
+			resolution := ""
+			videoCodec := ""
+			audioCodec := ""
+			for _, s := range info.Streams {
+				if s.CodecType == "video" && resolution == "" {
+					resolution = fmt.Sprintf("%dx%d", s.Width, s.Height)
+					videoCodec = s.CodecName
+				}
+				if s.CodecType == "audio" && audioCodec == "" {
+					audioCodec = s.CodecName
+				}
+			}
+			_ = models.UpdateSourceMetadata(ctx, m.DB, sourceID, map[string]any{
+				"last_recorded": time.Now().Format(time.RFC3339),
+				"source_type":   source.Type,
+				"resolution":    resolution,
+				"video_codec":   videoCodec,
+				"audio_codec":   audioCodec,
+			})
+		}
+	default:
 		probeCtx, probeCancel := context.WithTimeout(ctx, 60*time.Second)
 		info, pErr := media.Probe(probeCtx, source.URL)
 		probeCancel()
@@ -384,6 +438,26 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 		if newStreamType != source.StreamType {
 			_ = models.UpdateSourceStreamType(ctx, m.DB, sourceID, newStreamType)
 		}
+
+		resolution := ""
+		videoCodec := ""
+		audioCodec := ""
+		for _, s := range info.Streams {
+			if s.CodecType == "video" && resolution == "" {
+				resolution = fmt.Sprintf("%dx%d", s.Width, s.Height)
+				videoCodec = s.CodecName
+			}
+			if s.CodecType == "audio" && audioCodec == "" {
+				audioCodec = s.CodecName
+			}
+		}
+		_ = models.UpdateSourceMetadata(ctx, m.DB, sourceID, map[string]any{
+			"last_recorded": time.Now().Format(time.RFC3339),
+			"total_duration": totalDuration,
+			"resolution":    resolution,
+			"video_codec":   videoCodec,
+			"audio_codec":   audioCodec,
+		})
 	}
 
 	// Start thumbnail generation with retry (runs concurrently with transcode)
@@ -442,7 +516,7 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 		}
 	}
 
-	isLiveSource := source.Type == "rtmp" || source.Type == "rtsp" || source.Type == "device" || source.Type == "hls"
+	isLiveSource := source.Type == "rtmp" || source.Type == "rtsp" || source.Type == "device" || source.Type == "hls" || source.Type == "udp" || source.Type == "rtp" || source.Type == "srt"
 	if isLiveSource {
 		go func() {
 			ticker := time.NewTicker(5 * time.Second)
@@ -491,13 +565,117 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 	}})
 }
 
+func (m *Manager) StartExport(ctx context.Context, sourceID, outputID int64, startTime, duration float64) (*models.Export, error) {
+	export, err := models.CreateExport(ctx, m.DB, sourceID, outputID, startTime, duration)
+	if err != nil {
+		return nil, fmt.Errorf("create export: %w", err)
+	}
+
+	playlistPath := media.OutputDir(m.DataDir, outputID) + "/playlist.m3u8"
+	outputDir := filepath.Join(m.DataDir, "exports")
+	if err := media.EnsureOutputDir(outputDir); err != nil {
+		_ = models.FailExport(ctx, m.DB, export.ID, fmt.Sprintf("create export dir: %v", err))
+		return nil, err
+	}
+	outputPath := filepath.Join(outputDir, fmt.Sprintf("clip_%d.mp4", export.ID))
+
+	source, err := models.GetSource(ctx, m.DB, sourceID)
+	if err != nil {
+		_ = models.FailExport(ctx, m.DB, export.ID, fmt.Sprintf("get source: %v", err))
+		return nil, err
+	}
+
+	exportCtx, cancel := context.WithCancel(context.Background())
+	m.mu.Lock()
+	m.exportRunning[export.ID] = cancel
+	m.mu.Unlock()
+
+	go func() {
+		defer func() {
+			m.mu.Lock()
+			delete(m.exportRunning, export.ID)
+			m.mu.Unlock()
+		}()
+
+		_ = models.UpdateExportStatus(exportCtx, m.DB, export.ID, "processing", 0)
+		m.emit(JobEvent{Type: EventExportProgress, Payload: map[string]any{
+			"id": export.ID, "status": "processing", "progress": 0.0,
+		}})
+
+		var lastProgress float64
+		progressTicker := time.NewTicker(2 * time.Second)
+		defer progressTicker.Stop()
+
+		go func() {
+			for range progressTicker.C {
+				m.emit(JobEvent{Type: EventExportProgress, Payload: map[string]any{
+					"id": export.ID, "status": "processing", "progress": lastProgress,
+				}})
+				_ = models.UpdateExportStatus(exportCtx, m.DB, export.ID, "processing", lastProgress)
+			}
+		}()
+
+		onProgress := func(progress float64, line string) {
+			if progress >= 0 {
+				lastProgress = progress
+			}
+		}
+
+		cfg := media.ExportConfig{
+			PlaylistPath: playlistPath,
+			StartTime:    startTime,
+			Duration:     duration,
+			OutputPath:   outputPath,
+			HasVideo:     source.StreamType != "audio_only",
+		}
+
+		if err := media.ExportClip(exportCtx, cfg, onProgress); err != nil {
+			if exportCtx.Err() != nil {
+				_ = models.FailExport(context.Background(), m.DB, export.ID, "cancelled")
+			} else {
+				_ = models.FailExport(context.Background(), m.DB, export.ID, err.Error())
+			}
+			m.emit(JobEvent{Type: EventExportError, Payload: map[string]any{
+				"id": export.ID, "status": "failed", "error": err.Error(),
+			}})
+			return
+		}
+
+		var fileSize int64
+		if info, err := os.Stat(outputPath); err == nil {
+			fileSize = info.Size()
+		}
+
+		if err := models.CompleteExport(context.Background(), m.DB, export.ID, outputPath, fileSize); err != nil {
+			log.Printf("complete export %d: %v", export.ID, err)
+		}
+		m.emit(JobEvent{Type: EventExportComplete, Payload: map[string]any{
+			"id": export.ID, "status": "completed", "file_size": fileSize,
+		}})
+	}()
+
+	return export, nil
+}
+
+func (m *Manager) CancelExport(ctx context.Context, exportID int64) error {
+	m.mu.Lock()
+	cancel, ok := m.exportRunning[exportID]
+	m.mu.Unlock()
+
+	if ok {
+		cancel()
+	}
+
+	return models.FailExport(ctx, m.DB, exportID, "cancelled")
+}
+
 func isProgressLine(line string) bool {
 	return len(line) >= 5 && line[:5] == "frame"
 }
 
 func (m *Manager) generateThumbnailWithRetry(ctx context.Context, source *models.Source, outputDir string, jobID int64, inputFormat string) {
 	thumbPath := media.ThumbnailPath(outputDir)
-	isLive := source.Type == "rtmp" || source.Type == "rtsp" || source.Type == "device" || source.Type == "hls"
+	isLive := source.Type == "rtmp" || source.Type == "rtsp" || source.Type == "device" || source.Type == "hls" || source.Type == "udp" || source.Type == "rtp" || source.Type == "srt"
 
 	for {
 		if media.ThumbExists(outputDir) {

@@ -70,6 +70,18 @@ func (s *Server) setupRoutes() {
 			r.Put("/{id}", handler.UpdateSchedule(s.DB))
 			r.Delete("/{id}", handler.DeleteSchedule(s.DB))
 		})
+
+		r.Route("/api/exports", func(r chi.Router) {
+			r.Use(chimw.Timeout(300 * time.Second))
+			r.Post("/", handler.CreateExport(s.DB, s.Manager))
+			r.Get("/", handler.ListExports(s.DB))
+			r.Get("/{id}", handler.GetExport(s.DB))
+			r.Get("/{id}/download", handler.DownloadExport(s.DB, s.Config.DataDir))
+			r.Delete("/{id}", handler.DeleteExport(s.DB, s.Manager))
+		})
+
+		r.Post("/api/jobs/{id}/events", handler.CreateJobEvent(s.DB))
+		r.Delete("/api/events/{id}", handler.DeleteEvent(s.DB))
 	})
 
 	// Channels: optional auth (guests see public, admins see all)
@@ -91,5 +103,6 @@ func (s *Server) setupRoutes() {
 	// Public routes
 	s.Router.Get("/api/stream/{id}/*", handler.StreamHLS(s.Config.DataDir))
 	s.Router.Get("/api/ws", handler.WebSocket(s.DB, s.Manager))
+	s.Router.Get("/api/jobs/{id}/events", handler.ListJobEvents(s.DB))
 	s.Router.HandleFunc("/*", s.serveFrontend)
 }

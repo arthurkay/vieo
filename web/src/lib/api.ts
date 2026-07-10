@@ -1,4 +1,4 @@
-import type { Channel, Source, Output, Job, JobLog, User, Schedule } from '@/types'
+import type { Channel, Source, Output, Job, JobLog, User, Schedule, Export, TimelineEvent } from '@/types'
 
 const BASE = '/api'
 
@@ -125,5 +125,23 @@ export const api = {
       request<Schedule>(`/schedules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number) =>
       request<void>(`/schedules/${id}`, { method: 'DELETE' }),
+  },
+
+  exports: {
+    list: () => request<Export[]>('/exports'),
+    get: (id: number) => request<Export>(`/exports/${id}`),
+    create: (data: { source_id: number; output_id: number; start_time: number; duration: number }) =>
+      request<Export>('/exports', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: number) =>
+      request<void>(`/exports/${id}`, { method: 'DELETE' }),
+    downloadUrl: (id: number) => `/api/exports/${id}/download`,
+  },
+
+  events: {
+    listByJob: (jobId: number) => request<TimelineEvent[]>(`/jobs/${jobId}/events`),
+    create: (jobId: number, data: { time_offset: number; label: string; color?: string }) =>
+      request<TimelineEvent>(`/jobs/${jobId}/events`, { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: number) =>
+      request<void>(`/events/${id}`, { method: 'DELETE' }),
   },
 }

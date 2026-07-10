@@ -58,6 +58,34 @@ func Probe(ctx context.Context, path string) (*MediaInfo, error) {
 	return parseFFProbeOutput(out)
 }
 
+func ProbeNetworkStream(ctx context.Context, url string, sourceType string) (*MediaInfo, error) {
+	args := []string{
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_format",
+		"-show_streams",
+	}
+
+	switch sourceType {
+	case "udp":
+		args = append(args, "-timeout", "10000000", "-protocol_whitelist", "udp")
+	case "rtp":
+		args = append(args, "-timeout", "10000000", "-protocol_whitelist", "file,udp,rtp")
+	case "srt":
+		args = append(args, "-timeout", "15000000")
+	}
+
+	args = append(args, url)
+
+	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("ffprobe network: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	return parseFFProbeOutput(out)
+}
+
 func ProbeDevice(ctx context.Context, devicePath string) (*MediaInfo, *DeviceInfo, error) {
 	info, devInfo, err := probeDeviceWithV4L2Ctl(devicePath)
 	if err == nil {

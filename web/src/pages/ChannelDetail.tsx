@@ -119,6 +119,9 @@ export default function ChannelDetail() {
                         <SelectItem value="rtmp">RTMP</SelectItem>
                         <SelectItem value="rtsp">RTSP</SelectItem>
                         <SelectItem value="device">Device</SelectItem>
+                        <SelectItem value="udp">MPEG-TS (UDP)</SelectItem>
+                        <SelectItem value="rtp">MPEG-TS (RTP)</SelectItem>
+                        <SelectItem value="srt">SRT</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

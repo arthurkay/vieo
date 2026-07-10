@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { useWebSocket } from '@/hooks/use-websocket'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { MoreHorizontal, Play, Pause, PlayCircle, StopCircle, RotateCcw, Trash2, FileText, HardDrive } from 'lucide-react'
+import { MoreHorizontal, Play, Pause, PlayCircle, StopCircle, RotateCcw, Trash2, FileText, HardDrive, Download } from 'lucide-react'
 import type { Job, JobStatus, JobLog } from '@/types'
 
 function formatBytes(bytes: number): string {
@@ -46,6 +46,15 @@ function isValidStatus(s: string): s is JobStatus {
   return (VALID_STATUSES as string[]).includes(s)
 }
 
+function formatTime(seconds: number): string {
+  if (!isFinite(seconds) || seconds < 0) return '0:00'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s)}`
+}
+
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'running', label: 'Running' },
@@ -55,6 +64,107 @@ const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
   { value: 'stopped', label: 'Stopped' },
 ] as const
+
+function ExportsCard() {
+  const queryClient = useQueryClient()
+  const { data: exports = [], isLoading } = useQuery({
+    queryKey: ['exports'],
+    queryFn: () => api.exports.list(),
+  })
+
+  const deleteExportMutation = useMutation({
+    mutationFn: (id: number) => api.exports.delete(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['exports'] }),
+  })
+
+  const { data: sources } = useQuery({
+    queryKey: ['sources'],
+    queryFn: () => api.sources.list(),
+  })
+
+  const sourceNameMap = useMemo(() => {
+    if (!sources) return new Map<number, string>()
+    return new Map(sources.map((s) => [s.id, s.name]))
+  }, [sources])
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-4">
+          <Skeleton className="h-20 w-full" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (exports.length === 0) return null
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium">Exported Clips</h3>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Source</TableHead>
+              <TableHead>Time</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Size</TableHead>
+              <TableHead className="w-[80px]"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {exports.map((exp) => (
+              <TableRow key={exp.id}>
+                <TableCell className="text-sm">{sourceNameMap.get(exp.source_id) || `#${exp.source_id}`}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {formatTime(exp.start_time)} — {formatTime(exp.start_time + exp.duration)}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={exp.status === 'completed' ? 'running' : exp.status === 'failed' ? 'failed' : 'default'}>
+                    {exp.status}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {exp.file_size ? formatBytes(exp.file_size) : '—'}
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-1">
+                    {exp.status === 'completed' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => {
+                          const link = document.createElement('a')
+                          link.href = `/api/exports/${exp.id}/download`
+                          link.download = ''
+                          link.click()
+                        }}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => deleteExportMutation.mutate(exp.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function Jobs() {
   const queryClient = useQueryClient()
@@ -195,6 +305,10 @@ export default function Jobs() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      <div className="px-4 lg:px-6">
+        <ExportsCard />
       </div>
 
       <ConfirmDialog

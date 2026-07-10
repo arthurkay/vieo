@@ -11,7 +11,17 @@ import {
   Minimize,
   Camera,
   Gauge,
+  Subtitles,
+  Scissors,
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from '@/components/ui/dropdown-menu'
+import type { TimelineEvent } from '@/types'
 
 interface VideoPlayerProps {
   streamUrl: string
@@ -19,6 +29,9 @@ interface VideoPlayerProps {
   isLive?: boolean
   className?: string
   startTime?: string
+  events?: TimelineEvent[]
+  onExport?: (startTime: number, duration: number) => void
+  showExportButton?: boolean
 }
 
 function formatTime(seconds: number): string {
@@ -42,6 +55,9 @@ export default function VideoPlayer({
   isLive,
   className = '',
   startTime,
+  events = [],
+  onExport,
+  showExportButton = false,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -51,6 +67,7 @@ export default function VideoPlayer({
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const thumbSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recoveryCountRef = useRef(0)
+  const hlsRef = useRef<Hls | null>(null)
 
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -67,6 +84,14 @@ export default function VideoPlayer({
   const [thumbX, setThumbX] = useState(0)
   const [thumbTime, setThumbTime] = useState(0)
   const [thumbReady, setThumbReady] = useState(false)
+
+  const [subtitleTracks, setSubtitleTracks] = useState<{ id: number; name: string }[]>([])
+  const [activeSubtitle, setActiveSubtitle] = useState(-1)
+
+  const [clipMode, setClipMode] = useState(false)
+  const [clipStart, setClipStart] = useState(0)
+  const [clipEnd, setClipEnd] = useState(0)
+  const [draggingHandle, setDraggingHandle] = useState<'start' | 'end' | null>(null)
 
   const showControls = useCallback(() => {
     setControlsVisible(true)
@@ -85,6 +110,8 @@ export default function VideoPlayer({
     let hls: Hls | null = null
     let durationInterval: ReturnType<typeof setInterval> | null = null
     recoveryCountRef.current = 0
+    setSubtitleTracks([])
+    setActiveSubtitle(-1)
 
     if (Hls.isSupported()) {
       hls = new Hls({
@@ -97,6 +124,7 @@ export default function VideoPlayer({
         liveBackBufferLength: Infinity,
         maxBufferSize: 60 * 1024 * 1024,
       })
+      hlsRef.current = hls
       hls.loadSource(streamUrl)
       hls.attachMedia(video)
 
@@ -109,6 +137,12 @@ export default function VideoPlayer({
             }
           }, 10000)
         }
+      })
+
+      hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (_event, data) => {
+        const tracks = data.subtitleTracks.map((t) => ({ id: t.id, name: t.name }))
+        setSubtitleTracks(tracks)
+        setActiveSubtitle(hls!.subtitleTrack)
       })
 
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
@@ -139,6 +173,7 @@ export default function VideoPlayer({
                   liveBackBufferLength: Infinity,
                   maxBufferSize: 60 * 1024 * 1024,
                 })
+                hlsRef.current = hls
                 hls.loadSource(streamUrl)
                 hls.attachMedia(video)
                 recoveryCountRef.current = 0
@@ -153,6 +188,7 @@ export default function VideoPlayer({
 
     return () => {
       if (durationInterval) clearInterval(durationInterval)
+      hlsRef.current = null
       hls?.destroy()
     }
   }, [streamUrl, isLive])
@@ -274,6 +310,56 @@ export default function VideoPlayer({
     const next = SPEEDS[(idx + 1) % SPEEDS.length]
     video.playbackRate = next
     setSpeed(next)
+  }
+
+  function selectSubtitle(trackId: number) {
+    const hls = hlsRef.current
+    if (!hls) return
+    hls.subtitleTrack = trackId
+    setActiveSubtitle(trackId)
+  }
+
+  function toggleClipMode() {
+    if (clipMode) {
+      setClipMode(false)
+      setDraggingHandle(null)
+    } else {
+      setClipMode(true)
+      setClipStart(Math.max(0, currentTime - 30))
+      setClipEnd(Math.min(duration, currentTime + 30))
+    }
+  }
+
+  function handleClipMouseDown(handle: 'start' | 'end', e: React.MouseEvent) {
+    e.stopPropagation()
+    setDraggingHandle(handle)
+  }
+
+  function handleClipMouseMove(e: React.MouseEvent) {
+    if (!draggingHandle) return
+    const timeline = timelineRef.current
+    if (!timeline) return
+    const rect = timeline.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const pct = Math.max(0, Math.min(1, x / rect.width))
+    const time = pct * duration
+    if (draggingHandle === 'start') {
+      setClipStart(Math.min(time, clipEnd - 1))
+    } else {
+      setClipEnd(Math.max(time, clipStart + 1))
+    }
+  }
+
+  function handleClipMouseUp() {
+    setDraggingHandle(null)
+  }
+
+  function confirmExport() {
+    if (onExport && clipEnd > clipStart) {
+      onExport(clipStart, clipEnd - clipStart)
+      setClipMode(false)
+      setDraggingHandle(null)
+    }
   }
 
   function handleSeekStart() {
@@ -443,24 +529,21 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {/* Top overlay */}
-      <div
-        className={cn(
-          'absolute top-0 left-0 right-0 z-20 flex items-center justify-between p-3 transition-opacity duration-300',
-          controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none',
-        )}
-      >
-        {isLive && (
-          <span className="bg-red-600 text-white px-2 py-0.5 text-xs font-bold rounded shadow-lg animate-pulse">
-            LIVE
-          </span>
-        )}
-        {!isLive && startTime && (
-          <span className="bg-black/60 text-white px-2 py-0.5 text-xs font-medium rounded shadow">
-            {new Date(startTime).toLocaleDateString()} {new Date(startTime).toLocaleTimeString()}
-          </span>
-        )}
-        <span className="bg-black/60 text-white px-2 py-0.5 text-xs font-semibold rounded shadow ml-auto">
+      {/* Top overlay — always visible */}
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between p-3 pointer-events-none">
+        <div className="flex items-center gap-2">
+          {isLive && (
+            <span className="bg-red-600 text-white px-2 py-0.5 text-xs font-bold rounded shadow-lg animate-pulse">
+              LIVE
+            </span>
+          )}
+          {!isLive && startTime && (
+            <span className="bg-black/60 text-white px-2 py-0.5 text-xs font-medium rounded shadow">
+              {new Date(startTime).toLocaleDateString()} {new Date(startTime).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+        <span className="bg-black/60 text-white px-2 py-0.5 text-xs font-semibold rounded shadow">
           Vieo
         </span>
       </div>
@@ -485,31 +568,89 @@ export default function VideoPlayer({
           {/* Timeline */}
           <div
             ref={timelineRef}
-            className="flex items-center gap-3 mb-2"
-            onMouseMove={(e) => handleTimelineHover(e)}
-            onMouseLeave={handleTimelineLeave}
+            className="relative flex items-center gap-3 mb-2"
+            onMouseMove={(e) => { handleTimelineHover(e); handleClipMouseMove(e) }}
+            onMouseLeave={() => { handleTimelineLeave(); handleClipMouseUp() }}
+            onMouseUp={handleClipMouseUp}
           >
             <span className="text-white text-xs font-mono tabular-nums w-16 text-right shrink-0">
               {formatTime(seekProgress)}
             </span>
-            <Slider
-              value={[seekProgress]}
-              max={duration || 100}
-              step={0.1}
-              onValueChange={handleSeekChange}
-              onPointerDown={handleSeekStart}
-              onPointerUp={(e) => {
-                handleSeekEnd(seekValue)
-                ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
-              }}
-              className="flex-1 cursor-pointer"
-              trackClassName="h-1.5"
-              thumbClassName="h-3.5 w-3.5"
-            />
+            <div className="flex-1 relative">
+              {/* Event markers */}
+              {events.length > 0 && duration > 0 && (
+                <div className="absolute inset-x-0 top-0 h-2 pointer-events-none z-10">
+                  {events.map((ev) => (
+                    <div
+                      key={ev.id}
+                      className="absolute top-0 w-1.5 h-1.5 rounded-full -translate-x-0.5"
+                      style={{
+                        left: `${(ev.time_offset / duration) * 100}%`,
+                        backgroundColor: ev.color,
+                      }}
+                      title={`${formatTime(ev.time_offset)} — ${ev.label}`}
+                    />
+                  ))}
+                </div>
+              )}
+              {/* Clip selection overlay */}
+              {clipMode && duration > 0 && (
+                <div className="absolute inset-x-0 top-0 h-4 pointer-events-none z-10">
+                  {/* Selected region */}
+                  <div
+                    className="absolute top-0 h-full bg-blue-500/30 border-y border-blue-500/60"
+                    style={{
+                      left: `${(clipStart / duration) * 100}%`,
+                      width: `${((clipEnd - clipStart) / duration) * 100}%`,
+                    }}
+                  />
+                  {/* Start handle */}
+                  <div
+                    className="absolute top-0 h-full w-1 bg-blue-500 cursor-ew-resize pointer-events-auto"
+                    style={{ left: `${(clipStart / duration) * 100}%`, transform: 'translateX(-50%)' }}
+                    onMouseDown={(e) => handleClipMouseDown('start', e)}
+                  />
+                  {/* End handle */}
+                  <div
+                    className="absolute top-0 h-full w-1 bg-blue-500 cursor-ew-resize pointer-events-auto"
+                    style={{ left: `${(clipEnd / duration) * 100}%`, transform: 'translateX(-50%)' }}
+                    onMouseDown={(e) => handleClipMouseDown('end', e)}
+                  />
+                </div>
+              )}
+              <Slider
+                value={[seekProgress]}
+                max={duration || 100}
+                step={0.1}
+                onValueChange={handleSeekChange}
+                onPointerDown={handleSeekStart}
+                onPointerUp={(e) => {
+                  handleSeekEnd(seekValue)
+                  ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+                }}
+                className="flex-1 cursor-pointer"
+                trackClassName="h-1.5"
+                thumbClassName="h-3.5 w-3.5"
+              />
+            </div>
             <span className="text-white/60 text-xs font-mono tabular-nums w-16 shrink-0">
               {formatTime(duration)}
             </span>
           </div>
+          {/* Clip mode info bar */}
+          {clipMode && (
+            <div className="flex items-center justify-between text-xs text-white/80 mb-1 px-19">
+              <span>Clip: {formatTime(clipStart)} → {formatTime(clipEnd)} ({formatTime(clipEnd - clipStart)})</span>
+              <div className="flex gap-2">
+                <button onClick={confirmExport} className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs">
+                  Export
+                </button>
+                <button onClick={() => { setClipMode(false); setDraggingHandle(null) }} className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-xs">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Bottom row */}
           <div className="flex items-center gap-1">
@@ -531,6 +672,57 @@ export default function VideoPlayer({
               <Gauge className="h-3 w-3" />
               {speed}x
             </button>
+
+            {/* Subtitles */}
+            {subtitleTracks.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    className={cn(
+                      'p-1.5 rounded-md transition-colors',
+                      activeSubtitle !== -1 ? 'text-white bg-white/20' : 'text-white hover:bg-white/20',
+                    )}
+                    aria-label="Subtitles"
+                  >
+                    <Subtitles className="h-4 w-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side="top"
+                  sideOffset={8}
+                  align="end"
+                  className="bg-black/80 border-white/20 text-white min-w-[120px]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <DropdownMenuRadioGroup
+                    value={String(activeSubtitle)}
+                    onValueChange={(v) => selectSubtitle(Number(v))}
+                  >
+                    <DropdownMenuRadioItem value="-1">Off</DropdownMenuRadioItem>
+                    {subtitleTracks.map((t) => (
+                      <DropdownMenuRadioItem key={t.id} value={String(t.id)}>
+                        {t.name}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {/* Export clip */}
+            {showExportButton && !isLive && duration > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleClipMode() }}
+                className={cn(
+                  'p-1.5 rounded-md transition-colors',
+                  clipMode ? 'text-white bg-blue-600' : 'text-white hover:bg-white/20',
+                )}
+                aria-label="Export clip"
+              >
+                <Scissors className="h-4 w-4" />
+              </button>
+            )}
 
             {/* Spacer */}
             <div className="flex-1" />

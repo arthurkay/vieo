@@ -13,7 +13,7 @@ export interface Source {
   id: number
   channel_id: number
   name: string
-  type: 'file' | 'rtmp' | 'rtsp' | 'device' | 'hls'
+  type: 'file' | 'rtmp' | 'rtsp' | 'device' | 'hls' | 'udp' | 'rtp' | 'srt'
   url: string
   stream_type: StreamType
   metadata: string
@@ -85,10 +85,55 @@ export type JobEventPayload =
   | JobCompletePayload
   | JobErrorPayload
   | JobPausedPayload
+  | ExportProgressPayload
+  | ExportCompletePayload
+  | ExportErrorPayload
+
+export interface ExportProgressPayload {
+  id: number
+  status: string
+  progress?: number
+}
+
+export interface ExportCompletePayload {
+  id: number
+  status: string
+  file_size?: number
+}
+
+export interface ExportErrorPayload {
+  id: number
+  status: string
+  error: string
+}
 
 export interface JobEvent {
   type: string
   payload: JobEventPayload
+}
+
+export interface TimelineEvent {
+  id: number
+  job_id: number
+  time_offset: number
+  label: string
+  color: string
+  created_at: string
+}
+
+export interface Export {
+  id: number
+  source_id: number
+  output_id: number
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  progress: number
+  start_time: number
+  duration: number
+  file_path: string
+  file_size: number
+  error_msg: string
+  created_at: string
+  completed_at: string | null
 }
 
 export type UserRole = 'admin' | 'guest'

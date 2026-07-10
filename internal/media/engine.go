@@ -112,6 +112,10 @@ func buildInputArgs(cfg TranscodeConfig) []string {
 		if cfg.FrameRate != "" {
 			args = append(args, "-framerate", cfg.FrameRate)
 		}
+	case "udp":
+		args = append(args, "-fflags", "nobuffer+discardcorrupt")
+	case "rtp":
+		args = append(args, "-fflags", "nobuffer")
 	}
 
 	args = append(args, "-i", cfg.SourceURL)

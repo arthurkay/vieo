@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -78,6 +79,32 @@ var migrations = []string{
 		created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_schedules_source ON schedules(source_id)`,
+	// Timeline events for player markers
+	`CREATE TABLE IF NOT EXISTS timeline_events (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		job_id      INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+		time_offset REAL NOT NULL,
+		label       TEXT NOT NULL,
+		color       TEXT NOT NULL DEFAULT '#3b82f6',
+		created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_timeline_events_job ON timeline_events(job_id)`,
+	// Export clips
+	`CREATE TABLE IF NOT EXISTS exports (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		source_id    INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+		output_id    INTEGER NOT NULL REFERENCES outputs(id) ON DELETE CASCADE,
+		status       TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','failed')),
+		progress     REAL NOT NULL DEFAULT 0.0,
+		start_time   REAL NOT NULL DEFAULT 0.0,
+		duration     REAL NOT NULL DEFAULT 0.0,
+		file_path    TEXT NOT NULL DEFAULT '',
+		file_size    INTEGER NOT NULL DEFAULT 0,
+		error_msg    TEXT NOT NULL DEFAULT '',
+		created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+		completed_at TEXT
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_exports_source ON exports(source_id)`,
 }
 
 type DB struct {
@@ -150,6 +177,52 @@ func (db *DB) migrate(ctx context.Context) error {
 		); err != nil {
 			return fmt.Errorf("add name column: %w", err)
 		}
+	}
+	// Recreate sources table without restrictive CHECK constraint on type
+	// to support new source types (udp, rtp, srt)
+	var typeCheck string
+	if err := db.QueryRowContext(ctx,
+		"SELECT sql FROM sqlite_master WHERE type='table' AND name='sources'",
+	).Scan(&typeCheck); err == nil && strings.Contains(typeCheck, "CHECK(type IN") {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin tx for sources recreate: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "ALTER TABLE sources RENAME TO sources_old"); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("rename sources: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `CREATE TABLE sources (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			channel_id  INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+			type        TEXT    NOT NULL,
+			url         TEXT    NOT NULL,
+			stream_type TEXT    NOT NULL DEFAULT 'audio_video' CHECK(stream_type IN ('audio_video','audio_only','video_only')),
+			metadata    TEXT    NOT NULL DEFAULT '{}',
+			name        TEXT    NOT NULL DEFAULT '',
+			created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+		)`); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("create sources table: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			"INSERT INTO sources (id, channel_id, type, url, stream_type, metadata, name, created_at) SELECT id, channel_id, type, url, stream_type, metadata, name, created_at FROM sources_old",
+		); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("copy sources data: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "DROP TABLE sources_old"); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("drop sources_old: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_sources_channel ON sources(channel_id)"); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("recreate sources index: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit sources recreate: %w", err)
+		}
+		log.Printf("migrated sources table: removed restrictive type CHECK constraint")
 	}
 	return nil
 }

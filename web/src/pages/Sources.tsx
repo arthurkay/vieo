@@ -407,6 +407,9 @@ export default function Sources() {
                         <SelectItem value="rtmp">RTMP</SelectItem>
                         <SelectItem value="rtsp">RTSP</SelectItem>
                         <SelectItem value="device">Device</SelectItem>
+                        <SelectItem value="udp">MPEG-TS (UDP)</SelectItem>
+                        <SelectItem value="rtp">MPEG-TS (RTP)</SelectItem>
+                        <SelectItem value="srt">SRT</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -415,7 +418,7 @@ export default function Sources() {
                     <Input
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
-                      placeholder={type === 'file' ? '/path/to/video.mp4' : type === 'device' ? '/dev/video0' : 'https://...m3u8, rtmp://..., or rtsp://...'}
+                      placeholder={type === 'file' ? '/path/to/video.mp4' : type === 'device' ? '/dev/video0' : type === 'udp' ? 'udp://239.0.0.1:5000' : type === 'rtp' ? 'rtp://239.0.0.1:5004' : type === 'srt' ? 'srt://host:9000?mode=listener' : 'https://...m3u8, rtmp://..., or rtsp://...'}
                       required
                     />
                   </div>

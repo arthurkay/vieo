@@ -56,9 +56,9 @@ func CreateSource(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		validTypes := map[string]bool{"file": true, "hls": true, "rtmp": true, "rtsp": true, "device": true}
+		validTypes := map[string]bool{"file": true, "hls": true, "rtmp": true, "rtsp": true, "device": true, "udp": true, "rtp": true, "srt": true}
 		if !validTypes[s.Type] {
-			http.Error(w, "invalid type: must be file, hls, rtmp, rtsp, or device", http.StatusBadRequest)
+			http.Error(w, "invalid type: must be file, hls, rtmp, rtsp, device, udp, rtp, or srt", http.StatusBadRequest)
 			return
 		}
 
@@ -98,7 +98,8 @@ func UpdateSource(db *sql.DB) http.HandlerFunc {
 		}
 
 		var req struct {
-			Name *string `json:"name"`
+			Name     *string         `json:"name"`
+			Metadata map[string]any  `json:"metadata"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -108,6 +109,13 @@ func UpdateSource(db *sql.DB) http.HandlerFunc {
 		if err := models.UpdateSource(r.Context(), db, id, req.Name); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+
+		if req.Metadata != nil {
+			if err := models.UpdateSourceMetadata(r.Context(), db, id, req.Metadata); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 
 		source, err := models.GetSource(r.Context(), db, id)
