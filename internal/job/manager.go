@@ -114,6 +114,14 @@ func (m *Manager) StopJob(ctx context.Context, jobID int64) error {
 		cancel()
 	}
 
+	job, err := models.GetJob(ctx, m.DB, jobID)
+	if err == nil && job.OutputID > 0 {
+		outputDir := media.OutputDir(m.DataDir, job.OutputID)
+		if err := media.FinalizePlaylist(outputDir); err != nil {
+			log.Printf("finalize playlist job %d: %v", jobID, err)
+		}
+	}
+
 	return models.UpdateJobStatus(ctx, m.DB, jobID, "stopped", 0, "stopped by user")
 }
 
@@ -144,7 +152,15 @@ func (m *Manager) RetryJob(ctx context.Context, jobID int64) error {
 	}
 
 	if job.Status != "failed" && job.Status != "stopped" && job.Status != "completed" {
-		return fmt.Errorf("can only retry failed, stopped, or completed jobs")
+		return fmt.Errorf("can only continue failed, stopped, or completed jobs")
+	}
+
+	source, err := models.GetSource(ctx, m.DB, job.SourceID)
+	if err != nil {
+		return fmt.Errorf("get source: %w", err)
+	}
+	if source.Type == "file" {
+		return fmt.Errorf("continue not supported for file sources — create a new job instead")
 	}
 
 	if err := models.UpdateJobStatus(ctx, m.DB, jobID, "pending", 0, ""); err != nil {
@@ -154,11 +170,13 @@ func (m *Manager) RetryJob(ctx context.Context, jobID int64) error {
 	_ = models.ClearJobError(ctx, m.DB, jobID)
 
 	outputDir := media.OutputDir(m.DataDir, job.OutputID)
-	if err := media.CleanOutputDir(outputDir); err != nil {
-		log.Printf("clean output dir: %v", err)
+	startNumber, err := media.PrepareResume(outputDir)
+	if err != nil {
+		log.Printf("prepare continue job %d: %v", jobID, err)
+		startNumber = 0
 	}
 
-	go m.runJob(context.Background(), jobID, job.SourceID, job.OutputID, 0)
+	go m.runJob(context.Background(), jobID, job.SourceID, job.OutputID, startNumber)
 	return nil
 }
 
@@ -308,42 +326,81 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 		return
 	}
 
-	probeCtx, probeCancel := context.WithTimeout(ctx, 60*time.Second)
-	info, err := media.Probe(probeCtx, source.URL)
-	probeCancel()
-	if err != nil {
-		_ = models.FailJob(ctx, m.DB, jobID, fmt.Sprintf("probe: %v", err))
-		m.emit(JobEvent{Type: EventError, Payload: map[string]any{
-			"id": jobID, "status": "failed", "error": err.Error(),
-		}})
-		return
-	}
+	var totalDuration float64
+	hasVideo := true
+	var tcExtra media.TranscodeConfig
 
-	totalDuration := info.Format.Duration
-	hasVideo := info.HasVideo()
-	hasAudio := info.HasAudio()
+	if source.Type == "device" {
+		probeCtx, probeCancel := context.WithTimeout(ctx, 10*time.Second)
+		info, devInfo, pErr := media.ProbeDevice(probeCtx, source.URL)
+		probeCancel()
 
-	var newStreamType string
-	if hasVideo && hasAudio {
-		newStreamType = "audio_video"
-	} else if hasVideo {
-		newStreamType = "video_only"
-	} else if hasAudio {
-		newStreamType = "audio_only"
-	} else {
-		newStreamType = "audio_video"
-	}
-	if newStreamType != source.StreamType {
-		_ = models.UpdateSourceStreamType(ctx, m.DB, sourceID, newStreamType)
-	}
+		if pErr != nil {
+			log.Printf("probe device job %d: %v, using defaults", jobID, pErr)
+		} else {
+			hasVideo = info.HasVideo()
+			if devInfo != nil {
+				tcExtra.InputFormat = devInfo.InputFormat
+				tcExtra.VideoSize = devInfo.VideoSize
+				tcExtra.FrameRate = devInfo.FrameRate
 
-	if hasVideo {
-		thumbCtx, thumbCancel := context.WithTimeout(ctx, 15*time.Second)
-		thumbPath := media.ThumbnailPath(outputDir)
-		if err := media.GenerateThumbnail(thumbCtx, source.URL, thumbPath); err != nil {
-			log.Printf("generate thumbnail job %d: %v", jobID, err)
+				if info.HasVideo() {
+					_ = models.UpdateSourceMetadata(ctx, m.DB, sourceID, map[string]any{
+						"detected_format": devInfo.InputFormat,
+						"detected_size":   devInfo.VideoSize,
+						"detected_fps":    devInfo.FrameRate,
+					})
+				}
+			}
 		}
-		thumbCancel()
+
+		totalDuration = 0
+	} else {
+		probeCtx, probeCancel := context.WithTimeout(ctx, 60*time.Second)
+		info, pErr := media.Probe(probeCtx, source.URL)
+		probeCancel()
+		if pErr != nil {
+			_ = models.FailJob(ctx, m.DB, jobID, fmt.Sprintf("probe: %v", pErr))
+			m.emit(JobEvent{Type: EventError, Payload: map[string]any{
+				"id": jobID, "status": "failed", "error": pErr.Error(),
+			}})
+			return
+		}
+
+		totalDuration = info.Format.Duration
+		hasVideo = info.HasVideo()
+		hasAudio := info.HasAudio()
+
+		var newStreamType string
+		if hasVideo && hasAudio {
+			newStreamType = "audio_video"
+		} else if hasVideo {
+			newStreamType = "video_only"
+		} else if hasAudio {
+			newStreamType = "audio_only"
+		} else {
+			newStreamType = "audio_video"
+		}
+		if newStreamType != source.StreamType {
+			_ = models.UpdateSourceStreamType(ctx, m.DB, sourceID, newStreamType)
+		}
+	}
+
+	// Start thumbnail generation with retry (runs concurrently with transcode)
+	if hasVideo {
+		go m.generateThumbnailWithRetry(ctx, source, outputDir, jobID, tcExtra.InputFormat)
+	}
+
+	tc := media.TranscodeConfig{
+		SourceType:    source.Type,
+		SourceURL:     source.URL,
+		OutputDir:     outputDir,
+		TotalDuration: totalDuration,
+		HasVideo:      hasVideo,
+		StartNumber:   startNumber,
+		InputFormat:   tcExtra.InputFormat,
+		VideoSize:     tcExtra.VideoSize,
+		FrameRate:     tcExtra.FrameRate,
 	}
 
 	var lastProgress atomic.Uint64
@@ -385,9 +442,12 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 		}
 	}
 
-	if err := media.Transcode(ctx, source.URL, outputDir, totalDuration, hasVideo, startNumber, onProgress); err != nil {
+	if err := media.Transcode(ctx, tc, onProgress); err != nil {
 		if ctx.Err() != nil {
 			p := math.Float64frombits(lastProgress.Load())
+			if outputErr := media.FinalizePlaylist(outputDir); outputErr != nil {
+				log.Printf("finalize playlist job %d: %v", jobID, outputErr)
+			}
 			if updateErr := models.UpdateJobStatus(ctx, m.DB, jobID, "paused", p, "interrupted"); updateErr == nil {
 				m.emit(JobEvent{Type: EventPaused, Payload: map[string]any{
 					"id": jobID, "status": "paused", "reason": "interrupted",
@@ -403,6 +463,10 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 		return
 	}
 
+	if err := media.FinalizePlaylist(outputDir); err != nil {
+		log.Printf("finalize playlist job %d: %v", jobID, err)
+	}
+
 	_ = models.CompleteJob(ctx, m.DB, jobID)
 	m.emit(JobEvent{Type: EventComplete, Payload: map[string]any{
 		"id": jobID, "status": "completed",
@@ -411,4 +475,54 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 
 func isProgressLine(line string) bool {
 	return len(line) >= 5 && line[:5] == "frame"
+}
+
+func (m *Manager) generateThumbnailWithRetry(ctx context.Context, source *models.Source, outputDir string, jobID int64, inputFormat string) {
+	thumbPath := media.ThumbnailPath(outputDir)
+	isLive := source.Type == "rtmp" || source.Type == "rtsp" || source.Type == "device" || source.Type == "hls"
+
+	for {
+		if media.ThumbExists(outputDir) {
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		// For live streams, try segment-based first
+		if isLive {
+			segments, _ := media.ListSegments(outputDir)
+			if len(segments) > 0 {
+				segmentPath := media.SegmentPath(outputDir, segments[0])
+				thumbCtx, thumbCancel := context.WithTimeout(ctx, 30*time.Second)
+				if err := media.GenerateThumbnailFromSegment(thumbCtx, segmentPath, thumbPath); err != nil {
+					log.Printf("thumbnail retry job %d from segment: %v", jobID, err)
+				} else {
+					thumbCancel()
+					return
+				}
+				thumbCancel()
+			}
+		}
+
+		// Fallback: try source directly
+		thumbCtx, thumbCancel := context.WithTimeout(ctx, 30*time.Second)
+		if err := media.GenerateThumbnail(thumbCtx, source.URL, inputFormat, thumbPath); err != nil {
+			log.Printf("thumbnail retry job %d from source: %v", jobID, err)
+		} else {
+			thumbCancel()
+			return
+		}
+		thumbCancel()
+
+		// Wait before retry
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+	}
 }

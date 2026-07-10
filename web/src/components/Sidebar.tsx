@@ -2,25 +2,19 @@ import { useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { useTheme } from './theme-provider'
+import { useAuth } from '@/hooks/use-auth'
 import { Separator } from '@/components/ui/separator'
 import {
   LayoutDashboard,
   Radio,
   Video,
-  HardDrive,
   Activity,
   Moon,
   Sun,
   Menu,
   X,
+  LogOut,
 } from 'lucide-react'
-
-const links = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/channels', label: 'Channels', icon: Radio },
-  { to: '/sources', label: 'Sources', icon: Video },
-  { to: '/jobs', label: 'Jobs', icon: Activity },
-]
 
 export function SidebarToggle({ onClick }: { onClick: () => void }) {
   return (
@@ -36,11 +30,22 @@ export function SidebarToggle({ onClick }: { onClick: () => void }) {
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { setTheme, resolvedTheme } = useTheme()
+  const { user, logout } = useAuth()
   const location = useLocation()
+  const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
     onClose()
   }, [location.pathname])
+
+  const links = [
+    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/channels', label: 'Channels', icon: Radio },
+    ...(isAdmin ? [
+      { to: '/sources', label: 'Sources', icon: Video },
+      { to: '/jobs', label: 'Jobs', icon: Activity },
+    ] : []),
+  ]
 
   return (
     <>
@@ -97,6 +102,12 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           ))}
         </nav>
         <div className="p-4 border-t space-y-3">
+          {user && (
+            <div className="px-3 py-1">
+              <p className="text-xs text-muted-foreground">Signed in as</p>
+              <p className="text-sm font-medium truncate">{user.username}</p>
+            </div>
+          )}
           <button
             onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
             className="flex items-center gap-3 w-full px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
@@ -106,10 +117,13 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
             {resolvedTheme === 'dark' ? 'Light Mode' : 'Dark Mode'}
           </button>
           <Separator />
-          <div className="flex items-center gap-2 text-xs text-muted-foreground px-3">
-            <HardDrive className="h-3 w-3" />
-            v1.0.0
-          </div>
+          <button
+            onClick={() => logout()}
+            className="flex items-center gap-3 w-full px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
         </div>
       </aside>
     </>

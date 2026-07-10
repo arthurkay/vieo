@@ -66,3 +66,14 @@ func DeleteOutput(ctx context.Context, db *sql.DB, id int64) error {
 	}
 	return nil
 }
+
+func GetOutputBySource(ctx context.Context, db *sql.DB, sourceID int64) (*Output, error) {
+	var o Output
+	err := db.QueryRowContext(ctx,
+		"SELECT id, source_id, type, path, created_at FROM outputs WHERE source_id = ? ORDER BY id DESC LIMIT 1", sourceID,
+	).Scan(&o.ID, &o.SourceID, &o.Type, &o.Path, &o.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("get output by source: %w", err)
+	}
+	return &o, nil
+}

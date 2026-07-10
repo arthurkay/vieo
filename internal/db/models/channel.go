@@ -11,11 +11,12 @@ type Channel struct {
 	Name        string `json:"name"`
 	Slug        string `json:"slug"`
 	Description string `json:"description"`
+	Public      bool   `json:"public"`
 	CreatedAt   string `json:"created_at"`
 }
 
 func ListChannels(ctx context.Context, db *sql.DB) ([]Channel, error) {
-	rows, err := db.QueryContext(ctx, "SELECT id, name, slug, description, created_at FROM channels ORDER BY name")
+	rows, err := db.QueryContext(ctx, "SELECT id, name, slug, description, public, created_at FROM channels ORDER BY name")
 	if err != nil {
 		return nil, fmt.Errorf("list channels: %w", err)
 	}
@@ -24,7 +25,25 @@ func ListChannels(ctx context.Context, db *sql.DB) ([]Channel, error) {
 	var channels []Channel
 	for rows.Next() {
 		var c Channel
-		if err := rows.Scan(&c.ID, &c.Name, &c.Slug, &c.Description, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Slug, &c.Description, &c.Public, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan channel: %w", err)
+		}
+		channels = append(channels, c)
+	}
+	return channels, rows.Err()
+}
+
+func ListPublicChannels(ctx context.Context, db *sql.DB) ([]Channel, error) {
+	rows, err := db.QueryContext(ctx, "SELECT id, name, slug, description, public, created_at FROM channels WHERE public = 1 ORDER BY name")
+	if err != nil {
+		return nil, fmt.Errorf("list public channels: %w", err)
+	}
+	defer rows.Close()
+
+	var channels []Channel
+	for rows.Next() {
+		var c Channel
+		if err := rows.Scan(&c.ID, &c.Name, &c.Slug, &c.Description, &c.Public, &c.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan channel: %w", err)
 		}
 		channels = append(channels, c)
@@ -35,8 +54,8 @@ func ListChannels(ctx context.Context, db *sql.DB) ([]Channel, error) {
 func GetChannel(ctx context.Context, db *sql.DB, id int64) (*Channel, error) {
 	var c Channel
 	err := db.QueryRowContext(ctx,
-		"SELECT id, name, slug, description, created_at FROM channels WHERE id = ?", id,
-	).Scan(&c.ID, &c.Name, &c.Slug, &c.Description, &c.CreatedAt)
+		"SELECT id, name, slug, description, public, created_at FROM channels WHERE id = ?", id,
+	).Scan(&c.ID, &c.Name, &c.Slug, &c.Description, &c.Public, &c.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get channel: %w", err)
 	}
@@ -45,8 +64,8 @@ func GetChannel(ctx context.Context, db *sql.DB, id int64) (*Channel, error) {
 
 func CreateChannel(ctx context.Context, db *sql.DB, c *Channel) error {
 	res, err := db.ExecContext(ctx,
-		"INSERT INTO channels (name, slug, description) VALUES (?, ?, ?)",
-		c.Name, c.Slug, c.Description,
+		"INSERT INTO channels (name, slug, description, public) VALUES (?, ?, ?, ?)",
+		c.Name, c.Slug, c.Description, c.Public,
 	)
 	if err != nil {
 		return fmt.Errorf("create channel: %w", err)
@@ -59,8 +78,8 @@ func CreateChannel(ctx context.Context, db *sql.DB, c *Channel) error {
 
 func UpdateChannel(ctx context.Context, db *sql.DB, c *Channel) error {
 	_, err := db.ExecContext(ctx,
-		"UPDATE channels SET name = ?, slug = ?, description = ? WHERE id = ?",
-		c.Name, c.Slug, c.Description, c.ID,
+		"UPDATE channels SET name = ?, slug = ?, description = ?, public = ? WHERE id = ?",
+		c.Name, c.Slug, c.Description, c.Public, c.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update channel: %w", err)

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
@@ -11,8 +11,35 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MoreHorizontal, Play, Pause, PlayCircle, StopCircle, RotateCcw, Trash2, FileText } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { MoreHorizontal, Play, Pause, PlayCircle, StopCircle, RotateCcw, Trash2, FileText, HardDrive } from 'lucide-react'
 import type { Job, JobStatus, JobLog } from '@/types'
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+function StorageBadge({ outputId }: { outputId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['output-storage', outputId],
+    queryFn: () => api.outputs.storage(outputId),
+    refetchInterval: 5000,
+  })
+
+  if (isLoading) return <Skeleton className="h-4 w-16" />
+  if (!data) return null
+
+  return (
+    <span className="text-xs text-muted-foreground flex items-center gap-1">
+      <HardDrive className="h-3 w-3" />
+      {formatBytes(data.bytes)}
+    </span>
+  )
+}
 
 const VALID_STATUSES: JobStatus[] = ['pending', 'running', 'paused', 'completed', 'failed', 'stopped']
 function isValidStatus(s: string): s is JobStatus {
@@ -32,11 +59,27 @@ const STATUS_OPTIONS = [
 export default function Jobs() {
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('all')
+  const [deleteId, setDeleteId] = useState<number | null>(null)
 
   const { data: jobs, isLoading } = useQuery({
     queryKey: ['jobs', statusFilter],
     queryFn: () => api.jobs.list(statusFilter === 'all' ? undefined : statusFilter),
   })
+
+  const { data: sources } = useQuery({
+    queryKey: ['sources'],
+    queryFn: () => api.sources.list(),
+  })
+
+  const sourceTypeMap = useMemo(() => {
+    if (!sources) return new Map<number, string>()
+    return new Map(sources.map((s) => [s.id, s.type]))
+  }, [sources])
+
+  const sourceNameMap = useMemo(() => {
+    if (!sources) return new Map<number, string>()
+    return new Map(sources.map((s) => [s.id, s.name]))
+  }, [sources])
 
   const stopMutation = useMutation({
     mutationFn: (id: number) => api.jobs.stop(id),
@@ -56,10 +99,10 @@ export default function Jobs() {
     onError: (err: Error) => alert(`Resume failed: ${err.message}`),
   })
 
-  const retryMutation = useMutation({
-    mutationFn: (id: number) => api.jobs.retry(id),
+  const continueMutation = useMutation({
+    mutationFn: (id: number) => api.jobs.continue(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
-    onError: (err: Error) => alert(`Retry failed: ${err.message}`),
+    onError: (err: Error) => alert(`Continue failed: ${err.message}`),
   })
 
   const deleteMutation = useMutation({
@@ -120,8 +163,10 @@ export default function Jobs() {
                   <TableRow>
                     <TableHead className="w-[80px]">ID</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead>Output</TableHead>
+                    <TableHead>Storage</TableHead>
                     <TableHead className="w-[200px]">Progress</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
@@ -132,11 +177,13 @@ export default function Jobs() {
                     <JobRow
                       key={job.id}
                       job={job}
+                      sourceType={sourceTypeMap.get(job.source_id)}
+                      sourceName={sourceNameMap.get(job.source_id)}
                       onStop={() => stopMutation.mutate(job.id)}
                       onPause={() => pauseMutation.mutate(job.id)}
                       onResume={() => resumeMutation.mutate(job.id)}
-                      onRetry={() => retryMutation.mutate(job.id)}
-                      onDelete={() => { if (confirm('Delete this job?')) deleteMutation.mutate(job.id) }}
+                      onContinue={() => continueMutation.mutate(job.id)}
+                      onDelete={() => setDeleteId(job.id)}
                     />
                   ))}
                 </TableBody>
@@ -149,23 +196,38 @@ export default function Jobs() {
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={deleteId !== null}
+        onOpenChange={(open) => { if (!open) setDeleteId(null) }}
+        title="Delete Job"
+        description="Are you sure you want to delete this job? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteId) deleteMutation.mutate(deleteId); setDeleteId(null) }}
+        loading={deleteMutation.isPending}
+      />
     </div>
   )
 }
 
 function JobRow({
   job,
+  sourceType,
+  sourceName,
   onStop,
   onPause,
   onResume,
-  onRetry,
+  onContinue,
   onDelete,
 }: {
   job: Job
+  sourceType?: string
+  sourceName?: string
   onStop: () => void
   onPause: () => void
   onResume: () => void
-  onRetry: () => void
+  onContinue: () => void
   onDelete: () => void
 }) {
   const navigate = useNavigate()
@@ -174,7 +236,7 @@ function JobRow({
   const isPending = job.status === 'pending'
   const isPaused = job.status === 'paused'
   const isActive = isPending || isRunning || isPaused
-  const canRetry = job.status === 'failed' || job.status === 'stopped' || job.status === 'completed'
+  const canContinue = sourceType !== 'file' && (job.status === 'failed' || job.status === 'stopped')
   const canPlay = (isRunning || isPaused || job.status === 'completed') && job.output_id
 
   return (
@@ -182,8 +244,10 @@ function JobRow({
       <TableRow>
         <TableCell className="font-medium">#{job.id}</TableCell>
         <TableCell><Badge variant={job.status}>{job.status}</Badge></TableCell>
-        <TableCell>Source #{job.source_id}</TableCell>
+        <TableCell className="capitalize text-muted-foreground">{sourceType || '—'}</TableCell>
+        <TableCell>{sourceName || `Source #${job.source_id}`}</TableCell>
         <TableCell>Output #{job.output_id}</TableCell>
+        <TableCell><StorageBadge outputId={job.output_id} /></TableCell>
         <TableCell>
           {(isRunning || isPaused) ? (
             <div className="flex items-center gap-2">
@@ -226,9 +290,9 @@ function JobRow({
                   <StopCircle className="mr-2 h-4 w-4" /> Stop
                 </DropdownMenuItem>
               )}
-              {canRetry && (
-                <DropdownMenuItem onClick={onRetry}>
-                  <RotateCcw className="mr-2 h-4 w-4" /> Retry
+              {canContinue && (
+                <DropdownMenuItem onClick={onContinue}>
+                  <RotateCcw className="mr-2 h-4 w-4" /> Continue
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={() => setShowLogs(!showLogs)}>
@@ -244,7 +308,7 @@ function JobRow({
       </TableRow>
       {showLogs && (
         <TableRow>
-          <TableCell colSpan={7} className="p-0">
+          <TableCell colSpan={9} className="p-0">
             <JobLogsPanel jobId={job.id} />
           </TableCell>
         </TableRow>

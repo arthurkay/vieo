@@ -1,13 +1,40 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
+import { useAuth } from '@/hooks/use-auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useWebSocket } from '@/hooks/use-websocket'
-import { Radio, Video, Activity, CheckCircle, AlertCircle, PauseCircle, Play, TrendingUp, TrendingDown } from 'lucide-react'
+import { Radio, Video, Activity, CheckCircle, AlertCircle, PauseCircle, Play, TrendingUp, TrendingDown, HardDrive } from 'lucide-react'
 import type { Job, JobStatus, Channel, Source, Output } from '@/types'
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+function StorageBadge({ outputId }: { outputId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['output-storage', outputId],
+    queryFn: () => api.outputs.storage(outputId),
+    refetchInterval: 5000,
+  })
+
+  if (isLoading) return <Skeleton className="h-4 w-16" />
+  if (!data) return null
+
+  return (
+    <span className="text-xs text-muted-foreground flex items-center gap-1">
+      <HardDrive className="h-3 w-3" />
+      {formatBytes(data.bytes)}
+    </span>
+  )
+}
 
 const VALID_STATUSES: JobStatus[] = ['pending', 'running', 'paused', 'completed', 'failed', 'stopped']
 function isValidStatus(s: string): s is JobStatus {
@@ -24,10 +51,25 @@ interface PlayableStream {
 export default function Dashboard() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
   const { data: channels, isLoading: channelsLoading } = useQuery({ queryKey: ['channels'], queryFn: api.channels.list })
-  const { data: sources, isLoading: sourcesLoading } = useQuery({ queryKey: ['sources'], queryFn: () => api.sources.list() })
-  const { data: outputs } = useQuery({ queryKey: ['outputs'], queryFn: api.outputs.list })
-  const { data: jobs, isLoading: jobsLoading } = useQuery({ queryKey: ['jobs'], queryFn: () => api.jobs.list() })
+  const { data: sources, isLoading: sourcesLoading } = useQuery({
+    queryKey: ['sources'],
+    queryFn: () => api.sources.list(),
+    enabled: isAdmin,
+  })
+  const { data: outputs } = useQuery({
+    queryKey: ['outputs'],
+    queryFn: api.outputs.list,
+    enabled: isAdmin,
+  })
+  const { data: jobs, isLoading: jobsLoading } = useQuery({
+    queryKey: ['jobs'],
+    queryFn: () => api.jobs.list(),
+    enabled: isAdmin,
+  })
 
   const running = jobs?.filter((j) => j.status === 'running').length || 0
   const completed = jobs?.filter((j) => j.status === 'completed').length || 0
@@ -64,47 +106,50 @@ export default function Dashboard() {
       color: 'text-blue-600',
       loading: channelsLoading,
     },
-    {
-      title: 'Sources',
-      value: sources?.length || 0,
-      icon: Video,
-      color: 'text-purple-600',
-      loading: sourcesLoading,
-    },
-    {
-      title: 'Running',
-      value: running,
-      icon: Activity,
-      color: 'text-green-600',
-      loading: jobsLoading,
-      trend: running > 0 ? 'up' as const : undefined,
-    },
-    {
-      title: 'Completed',
-      value: completed,
-      icon: CheckCircle,
-      color: 'text-emerald-600',
-      loading: jobsLoading,
-      trend: completed > 0 ? 'up' as const : undefined,
-    },
-    {
-      title: 'Failed',
-      value: failed,
-      icon: AlertCircle,
-      color: 'text-red-600',
-      loading: jobsLoading,
-      trend: failed > 0 ? 'down' as const : undefined,
-    },
-    {
-      title: 'Paused',
-      value: paused,
-      icon: PauseCircle,
-      color: 'text-amber-600',
-      loading: jobsLoading,
-    },
+    ...(isAdmin ? [
+      {
+        title: 'Sources',
+        value: sources?.length || 0,
+        icon: Video,
+        color: 'text-purple-600',
+        loading: sourcesLoading,
+      },
+      {
+        title: 'Running',
+        value: running,
+        icon: Activity,
+        color: 'text-green-600',
+        loading: jobsLoading,
+        trend: running > 0 ? 'up' as const : undefined,
+      },
+      {
+        title: 'Completed',
+        value: completed,
+        icon: CheckCircle,
+        color: 'text-emerald-600',
+        loading: jobsLoading,
+        trend: completed > 0 ? 'up' as const : undefined,
+      },
+      {
+        title: 'Failed',
+        value: failed,
+        icon: AlertCircle,
+        color: 'text-red-600',
+        loading: jobsLoading,
+        trend: failed > 0 ? 'down' as const : undefined,
+      },
+      {
+        title: 'Paused',
+        value: paused,
+        icon: PauseCircle,
+        color: 'text-amber-600',
+        loading: jobsLoading,
+      },
+    ] : []),
   ]
 
   useWebSocket((event) => {
+    if (!isAdmin) return
     if (event.type === 'job:update') {
       const payload = event.payload as { id?: number; status?: string; progress?: number }
       if (!payload?.id) return
@@ -194,8 +239,11 @@ export default function Dashboard() {
                       {streams.map((stream) => (
                         <div key={stream.job.id} className="border rounded-lg p-3 group">
                           <div className="flex items-center justify-between mb-2">
-                            <span className="font-medium text-sm capitalize">{stream.source.type}</span>
-                            <Badge variant={stream.job.status} className="text-xs">{stream.job.status}</Badge>
+                            <span className="font-medium text-sm">{stream.source.name || `Source #${stream.source.id}`}</span>
+                            <div className="flex items-center gap-2">
+                              <StorageBadge outputId={stream.output.id} />
+                              <Badge variant={stream.job.status} className="text-xs">{stream.job.status}</Badge>
+                            </div>
                           </div>
                           <button
                             className="aspect-video bg-black rounded-md relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform w-full"
@@ -226,47 +274,49 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="px-4 lg:px-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Jobs</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {jobsLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : jobs && jobs.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[80px]">ID</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Output</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Created</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {jobs.slice(0, 5).map((job) => (
-                    <TableRow key={job.id}>
-                      <TableCell className="font-medium">#{job.id}</TableCell>
-                      <TableCell>Source #{job.source_id}</TableCell>
-                      <TableCell>Output #{job.output_id}</TableCell>
-                      <TableCell><Badge variant={job.status}>{job.status}</Badge></TableCell>
-                      <TableCell className="text-right text-muted-foreground">{new Date(job.created_at).toLocaleDateString()}</TableCell>
-                    </TableRow>
+      {isAdmin && (
+        <div className="px-4 lg:px-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Jobs</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {jobsLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
                   ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-muted-foreground text-center py-4">No jobs yet</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                </div>
+              ) : jobs && jobs.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[80px]">ID</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead>Output</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Created</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {jobs.slice(0, 5).map((job) => (
+                      <TableRow key={job.id}>
+                        <TableCell className="font-medium">#{job.id}</TableCell>
+                        <TableCell>Source #{job.source_id}</TableCell>
+                        <TableCell>Output #{job.output_id}</TableCell>
+                        <TableCell><Badge variant={job.status}>{job.status}</Badge></TableCell>
+                        <TableCell className="text-right text-muted-foreground">{new Date(job.created_at).toLocaleDateString()}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-muted-foreground text-center py-4">No jobs yet</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

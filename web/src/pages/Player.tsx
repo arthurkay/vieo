@@ -10,6 +10,16 @@ import { Separator } from '@/components/ui/separator'
 import { ArrowLeft, Radio, Activity, Clock } from 'lucide-react'
 import type { JobStatus } from '@/types'
 
+function SourceName({ sourceId }: { sourceId: number }) {
+  const { data: sources } = useQuery({
+    queryKey: ['sources'],
+    queryFn: () => api.sources.list(),
+  })
+  const source = sources?.find((s) => s.id === sourceId)
+  if (!source) return <div className="text-sm">#{sourceId}</div>
+  return <div className="text-sm">{source.name || `#${source.id}`}</div>
+}
+
 export default function Player() {
   const { outputId } = useParams<{ outputId: string }>()
   const navigate = useNavigate()
@@ -19,11 +29,6 @@ export default function Player() {
   const { data: jobs } = useQuery({
     queryKey: ['jobs'],
     queryFn: () => api.jobs.list(),
-  })
-
-  const { data: health } = useQuery({
-    queryKey: ['health'],
-    queryFn: api.health,
   })
 
   const job = jobs?.find((j) => j.output_id === id && j.status !== 'stopped')
@@ -57,7 +62,6 @@ export default function Player() {
             streamUrl={`/api/stream/${id}/playlist.m3u8`}
             posterUrl={`/api/stream/${id}/thumb.jpg`}
             isLive={isLive}
-            watermark={health?.watermark}
             className="w-full h-full max-h-[calc(100vh-5rem)] sm:max-h-[calc(100vh-8rem)]"
           />
         </div>
@@ -84,7 +88,7 @@ export default function Player() {
             <Card className="bg-muted/50">
               <CardContent className="p-4">
                 <div className="text-xs text-muted-foreground mb-1">Source</div>
-                <div className="text-sm">#{job.source_id}</div>
+                <SourceName sourceId={job.source_id} />
               </CardContent>
             </Card>
           )}

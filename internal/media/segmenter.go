@@ -1,7 +1,6 @@
 package media
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,6 +26,16 @@ func ThumbnailPath(outputDir string) string {
 	return filepath.Join(outputDir, "thumb.jpg")
 }
 
+func SegmentPath(outputDir, segmentName string) string {
+	return filepath.Join(outputDir, segmentName)
+}
+
+func ThumbExists(outputDir string) bool {
+	path := ThumbnailPath(outputDir)
+	info, err := os.Stat(path)
+	return err == nil && info.Size() > 0
+}
+
 func SegmentExists(outputDir string, segmentName string) bool {
 	path := filepath.Join(outputDir, segmentName)
 	_, err := os.Stat(path)
@@ -46,6 +55,28 @@ func ListSegments(outputDir string) ([]string, error) {
 		}
 	}
 	return segments, nil
+}
+
+func DirSize(dir string) (int64, error) {
+	var size int64
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("read dir: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		size += info.Size()
+	}
+	return size, nil
 }
 
 func CleanOutputDir(dir string) error {
@@ -97,67 +128,51 @@ func LastSegmentNumber(dir string) (int, error) {
 }
 
 func FinalizePlaylist(dir string) error {
-	playlist := PlaylistPath(dir)
-	f, err := os.OpenFile(playlist, os.O_RDWR|os.O_CREATE, 0644)
+	segments, err := ListSegments(dir)
 	if err != nil {
-		return fmt.Errorf("open playlist: %w", err)
+		return fmt.Errorf("list segments: %w", err)
 	}
-	defer f.Close()
+	if len(segments) == 0 {
+		return fmt.Errorf("no segments in %s", dir)
+	}
+
+	type seg struct {
+		name string
+		num  int
+	}
+	var parsed []seg
+	for _, name := range segments {
+		m := segRe.FindStringSubmatch(name)
+		if m == nil {
+			continue
+		}
+		n, _ := strconv.Atoi(m[1])
+		parsed = append(parsed, seg{name: name, num: n})
+	}
+	if len(parsed) == 0 {
+		return fmt.Errorf("no valid segments in %s", dir)
+	}
+
+	sort.Slice(parsed, func(i, j int) bool {
+		return parsed[i].num < parsed[j].num
+	})
 
 	var lines []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
+	lines = append(lines, "#EXTM3U")
+	lines = append(lines, "#EXT-X-VERSION:3")
+	lines = append(lines, "#EXT-X-TARGETDURATION:4")
+	lines = append(lines, fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", parsed[0].num))
 
-	for _, l := range lines {
-		if strings.TrimSpace(l) == "#EXT-X-ENDLIST" {
-			return nil
-		}
-	}
-
-	for i := len(lines) - 1; i >= 0; i-- {
-		trimmed := strings.TrimSpace(lines[i])
-		if trimmed == "" {
-			continue
-		}
-		if strings.HasPrefix(trimmed, "#") {
-			lines = lines[:i]
-		} else {
-			lines = lines[:i]
-			break
-		}
-	}
-
-	for len(lines) > 0 {
-		last := strings.TrimSpace(lines[len(lines)-1])
-		m := segRe.FindStringSubmatch(last)
-		if m == nil {
-			lines = lines[:len(lines)-1]
-			continue
-		}
-		segPath := filepath.Join(dir, last)
-		info, err := os.Stat(segPath)
-		if err != nil || info.Size() < 4096 {
-			lines = lines[:len(lines)-1]
-			continue
-		}
-		break
-	}
-
-	if len(lines) == 0 {
-		return fmt.Errorf("empty playlist in %s", dir)
+	for _, s := range parsed {
+		lines = append(lines, "#EXTINF:4.000000,")
+		lines = append(lines, s.name)
 	}
 
 	lines = append(lines, "#EXT-X-ENDLIST")
+
+	playlist := PlaylistPath(dir)
 	data := []byte(strings.Join(lines, "\n") + "\n")
-	if err := f.Truncate(0); err != nil {
-		return fmt.Errorf("truncate playlist: %w", err)
-	}
-	if _, err := f.Seek(0, 0); err != nil {
-		return fmt.Errorf("seek playlist: %w", err)
-	}
-	if _, err := f.Write(data); err != nil {
+	if err := os.WriteFile(playlist, data, 0644); err != nil {
 		return fmt.Errorf("write playlist: %w", err)
 	}
 
@@ -165,67 +180,9 @@ func FinalizePlaylist(dir string) error {
 }
 
 func PrepareResume(dir string) (int, error) {
-	playlist := PlaylistPath(dir)
-
-	f, err := os.Open(playlist)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("open playlist: %w", err)
-	}
-
-	var lines []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-	f.Close()
-
-	var cleaned []string
-	for _, l := range lines {
-		trimmed := strings.TrimSpace(l)
-		if trimmed == "#EXT-X-ENDLIST" || trimmed == "#EXT-X-MEDIA-SEQUENCE:0" {
-			continue
-		}
-		cleaned = append(cleaned, l)
-	}
-
-	f2, err := os.Create(playlist)
-	if err != nil {
-		return 0, fmt.Errorf("create playlist: %w", err)
-	}
-	defer f2.Close()
-
-	for _, l := range cleaned {
-		if _, err := fmt.Fprintln(f2, l); err != nil {
-			return 0, fmt.Errorf("write playlist line: %w", err)
-		}
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err == nil {
-		var segNames []string
-		for _, e := range entries {
-			if !e.IsDir() && filepath.Ext(e.Name()) == ".ts" {
-				segNames = append(segNames, e.Name())
-			}
-		}
-		sort.Strings(segNames)
-
-		if len(segNames) > 1 {
-			for _, name := range segNames[:len(segNames)-1] {
-				if err := os.Remove(filepath.Join(dir, name)); err != nil {
-					return 0, fmt.Errorf("remove segment %s: %w", name, err)
-				}
-			}
-		}
-	}
-
 	maxSeg, err := LastSegmentNumber(dir)
 	if err != nil {
 		return 0, err
 	}
-
 	return maxSeg + 1, nil
 }

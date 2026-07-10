@@ -131,7 +131,7 @@ func ResumeJob(db *sql.DB, mgr *job.Manager) http.HandlerFunc {
 	}
 }
 
-func RetryJob(db *sql.DB, mgr *job.Manager) http.HandlerFunc {
+func ContinueJob(db *sql.DB, mgr *job.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {

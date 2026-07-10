@@ -1,25 +1,94 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Plus, MoreHorizontal, Pencil, Trash2, ExternalLink } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { Plus, Radio, Play, HardDrive, Pencil, Trash2, ExternalLink } from 'lucide-react'
+import type { Job, Channel, Source, Output } from '@/types'
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+function StorageBadge({ outputId }: { outputId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['output-storage', outputId],
+    queryFn: () => api.outputs.storage(outputId),
+    refetchInterval: 5000,
+  })
+
+  if (isLoading) return <Skeleton className="h-4 w-16" />
+  if (!data) return null
+
+  return (
+    <span className="text-xs text-muted-foreground flex items-center gap-1">
+      <HardDrive className="h-3 w-3" />
+      {formatBytes(data.bytes)}
+    </span>
+  )
+}
+
+interface PlayableStream {
+  channel: Channel
+  source: Source
+  output: Output
+  job: Job
+}
 
 export default function Channels() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [description, setDescription] = useState('')
+  const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [deleteName, setDeleteName] = useState('')
 
   const { data: channels, isLoading } = useQuery({ queryKey: ['channels'], queryFn: api.channels.list })
+  const { data: sources } = useQuery({ queryKey: ['sources'], queryFn: () => api.sources.list() })
+  const { data: outputs } = useQuery({ queryKey: ['outputs'], queryFn: api.outputs.list })
+  const { data: jobs } = useQuery({ queryKey: ['jobs'], queryFn: () => api.jobs.list() })
+
+  const playableStreams: PlayableStream[] = []
+  if (channels && sources && outputs && jobs) {
+    const channelMap = new Map(channels.map((c) => [c.id, c]))
+    const sourceMap = new Map(sources.map((s) => [s.id, s]))
+    const jobsBySource = new Map<number, Job[]>()
+    for (const j of jobs) {
+      const list = jobsBySource.get(j.source_id)
+      if (list) list.push(j)
+      else jobsBySource.set(j.source_id, [j])
+    }
+    for (const output of outputs) {
+      const source = sourceMap.get(output.source_id)
+      if (!source) continue
+      const channel = channelMap.get(source.channel_id)
+      if (!channel) continue
+      const sourceJobs = jobsBySource.get(source.id)
+      const latestJob = sourceJobs?.sort((a, b) => b.id - a.id)[0]
+      if (!latestJob) continue
+      playableStreams.push({ channel, source, output, job: latestJob })
+    }
+  }
+
+  const streamsByChannel = new Map<number, PlayableStream[]>()
+  for (const stream of playableStreams) {
+    const list = streamsByChannel.get(stream.channel.id)
+    if (list) list.push(stream)
+    else streamsByChannel.set(stream.channel.id, [stream])
+  }
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; slug: string; description: string }) =>
@@ -120,69 +189,109 @@ export default function Channels() {
         </div>
       )}
 
-      <div className="px-4 lg:px-6">
-        <Card>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="p-4 space-y-2">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : channels && channels.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Slug</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {channels.map((ch) => (
-                    <TableRow key={ch.id}>
-                      <TableCell className="font-medium">{ch.name}</TableCell>
-                      <TableCell className="text-muted-foreground font-mono text-xs">{ch.slug}</TableCell>
-                      <TableCell className="text-muted-foreground max-w-[300px] truncate">{ch.description || '—'}</TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                              <span className="sr-only">Actions</span>
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem asChild>
-                              <Link to={`/channels/${ch.id}`}>
-                                <ExternalLink className="mr-2 h-4 w-4" /> View
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => startEdit(ch)}>
-                              <Pencil className="mr-2 h-4 w-4" /> Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => { if (confirm(`Delete channel "${ch.name}"?`)) deleteMutation.mutate(ch.id) }}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="py-8 text-center text-muted-foreground">
-                No channels yet. Create one to get started.
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      <div className="px-4 lg:px-6 space-y-6">
+        {isLoading ? (
+          <div className="space-y-4">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Card key={i}>
+                <CardContent className="p-4">
+                  <Skeleton className="h-6 w-40 mb-4" />
+                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {Array.from({ length: 3 }).map((_, j) => (
+                      <Skeleton key={j} className="h-40 w-full" />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : channels && channels.length > 0 ? (
+          channels.map((ch) => {
+            const streams = streamsByChannel.get(ch.id) || []
+            return (
+              <Card key={ch.id}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Radio className="h-4 w-4 text-blue-600" />
+                      <CardTitle className="text-base">{ch.name}</CardTitle>
+                      {ch.description && (
+                        <span className="text-xs text-muted-foreground">— {ch.description}</span>
+                      )}
+                      <Badge variant="secondary" className="text-xs">{streams.length} stream{streams.length !== 1 ? 's' : ''}</Badge>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => navigate(`/channels/${ch.id}`)}>
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => startEdit(ch)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => { setDeleteId(ch.id); setDeleteName(ch.name) }}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {streams.length > 0 ? (
+                    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                      {streams.map((stream) => (
+                        <div key={stream.job.id} className="border rounded-lg p-3 group">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-sm">{stream.source.name || `Source #${stream.source.id}`}</span>
+                            <div className="flex items-center gap-2">
+                              <StorageBadge outputId={stream.output.id} />
+                              <Badge variant={stream.job.status} className="text-xs">{stream.job.status}</Badge>
+                            </div>
+                          </div>
+                          <button
+                            className="aspect-video bg-black rounded-md relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform w-full"
+                            onClick={() => navigate(`/player/${stream.output.id}`)}
+                            aria-label={`Play stream from ${ch.name}`}
+                          >
+                            <img
+                              src={`/api/stream/${stream.output.id}/thumb.jpg`}
+                              alt=""
+                              className="w-full h-full object-contain"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors">
+                              <Play className="h-10 w-10 text-white/80 drop-shadow-lg" />
+                            </div>
+                          </button>
+                          <p className="text-xs text-muted-foreground mt-2 truncate" title={stream.source.url}>
+                            {stream.source.url}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">No streams yet</p>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })
+        ) : (
+          <Card>
+            <CardContent className="py-8 text-center text-muted-foreground">
+              No channels yet. Create one to get started.
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      <ConfirmDialog
+        open={deleteId !== null}
+        onOpenChange={(open) => { if (!open) { setDeleteId(null); setDeleteName('') } }}
+        title="Delete Channel"
+        description={`Are you sure you want to delete "${deleteName}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteId) deleteMutation.mutate(deleteId); setDeleteId(null); setDeleteName('') }}
+        loading={deleteMutation.isPending}
+      />
     </div>
   )
 }

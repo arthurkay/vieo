@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
@@ -9,14 +11,16 @@ import (
 )
 
 type Config struct {
-	DBPath    string
-	DataDir   string
-	HTTPAddr  string
-	LogLevel  string
-	DiskWarn  int
-	DiskCrit  int
-	MaxJobs   int
-	Watermark bool
+	DBPath      string
+	DataDir     string
+	HTTPAddr    string
+	LogLevel    string
+	DiskWarn    int
+	DiskCrit    int
+	MaxJobs     int
+	Watermark   bool
+	JWTSecret   string
+	AuthEnabled bool
 }
 
 func Load() (*Config, error) {
@@ -30,7 +34,18 @@ func Load() (*Config, error) {
 	flag.IntVar(&c.DiskCrit, "disk-crit", envInt("VIEO_DISK_CRIT", 95), "Disk usage % to stop jobs")
 	flag.IntVar(&c.MaxJobs, "max-jobs", envInt("VIEO_MAX_JOBS", 3), "Maximum concurrent transcoding jobs")
 	flag.BoolVar(&c.Watermark, "watermark", envBool("VIEO_WATERMARK", true), "Enable watermark overlay on video streams")
+	flag.StringVar(&c.JWTSecret, "jwt-secret", envStr("VIEO_JWT_SECRET", ""), "JWT signing secret (auto-generated if empty)")
+	flag.BoolVar(&c.AuthEnabled, "auth", envBool("VIEO_AUTH_ENABLED", true), "Enable authentication")
 	flag.Parse()
+
+	if c.JWTSecret == "" {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			return nil, fmt.Errorf("generate jwt secret: %w", err)
+		}
+		c.JWTSecret = hex.EncodeToString(b)
+		log.Printf("auto-generated JWT secret (set VIEO_JWT_SECRET to persist)")
+	}
 
 	if c.DiskWarn <= 0 || c.DiskWarn > 100 {
 		return nil, fmt.Errorf("disk-warn must be between 1 and 100")

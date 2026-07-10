@@ -3,6 +3,7 @@ export interface Channel {
   name: string
   slug: string
   description: string
+  public: boolean
   created_at: string
 }
 
@@ -11,6 +12,7 @@ export type StreamType = 'audio_video' | 'audio_only' | 'video_only'
 export interface Source {
   id: number
   channel_id: number
+  name: string
   type: 'file' | 'rtmp' | 'rtsp' | 'device' | 'hls'
   url: string
   stream_type: StreamType
@@ -87,4 +89,26 @@ export type JobEventPayload =
 export interface JobEvent {
   type: string
   payload: JobEventPayload
+}
+
+export type UserRole = 'admin' | 'guest'
+
+export interface User {
+  id: number
+  username: string
+  role: UserRole
+  created_at: string
+}
+
+export interface Schedule {
+  id: number
+  source_id: number
+  name: string
+  enabled: boolean
+  start_time: string
+  end_time: string | null
+  days_of_week: string
+  current_job_id: number | null
+  last_started: string | null
+  created_at: string
 }

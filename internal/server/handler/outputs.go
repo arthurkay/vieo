@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/arthur/vieo/internal/db/models"
+	"github.com/arthur/vieo/internal/media"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -55,5 +56,24 @@ func DeleteOutput(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func GetOutputStorage(db *sql.DB, dataDir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		dir := media.OutputDir(dataDir, id)
+		size, err := media.DirSize(dir)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		writeJSON(w, map[string]int64{"bytes": size})
 	}
 }

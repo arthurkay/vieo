@@ -7,13 +7,23 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/arthur/vieo/internal/auth"
 	"github.com/arthur/vieo/internal/db/models"
 	"github.com/go-chi/chi/v5"
 )
 
-func ListChannels(db *sql.DB) http.HandlerFunc {
+func ListChannels(db *sql.DB, jwtSecret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		channels, err := models.ListChannels(r.Context(), db)
+		user := auth.UserFromContext(r.Context())
+		var channels []models.Channel
+		var err error
+
+		if user != nil && user.Role == "admin" {
+			channels, err = models.ListChannels(r.Context(), db)
+		} else {
+			channels, err = models.ListPublicChannels(r.Context(), db)
+		}
+
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
