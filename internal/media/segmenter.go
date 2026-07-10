@@ -172,8 +172,12 @@ func FinalizePlaylist(dir string) error {
 
 	playlist := PlaylistPath(dir)
 	data := []byte(strings.Join(lines, "\n") + "\n")
-	if err := os.WriteFile(playlist, data, 0644); err != nil {
-		return fmt.Errorf("write playlist: %w", err)
+	tmp := playlist + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return fmt.Errorf("write playlist tmp: %w", err)
+	}
+	if err := os.Rename(tmp, playlist); err != nil {
+		return fmt.Errorf("rename playlist: %w", err)
 	}
 
 	return nil
@@ -185,4 +189,58 @@ func PrepareResume(dir string) (int, error) {
 		return 0, err
 	}
 	return maxSeg + 1, nil
+}
+
+func RefreshLivePlaylist(dir string) error {
+	segments, err := ListSegments(dir)
+	if err != nil {
+		return fmt.Errorf("list segments: %w", err)
+	}
+	if len(segments) == 0 {
+		return nil
+	}
+
+	type seg struct {
+		name string
+		num  int
+	}
+	var parsed []seg
+	for _, name := range segments {
+		m := segRe.FindStringSubmatch(name)
+		if m == nil {
+			continue
+		}
+		n, _ := strconv.Atoi(m[1])
+		parsed = append(parsed, seg{name: name, num: n})
+	}
+	if len(parsed) == 0 {
+		return nil
+	}
+
+	sort.Slice(parsed, func(i, j int) bool {
+		return parsed[i].num < parsed[j].num
+	})
+
+	var lines []string
+	lines = append(lines, "#EXTM3U")
+	lines = append(lines, "#EXT-X-VERSION:3")
+	lines = append(lines, "#EXT-X-TARGETDURATION:4")
+	lines = append(lines, fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", parsed[0].num))
+
+	for _, s := range parsed {
+		lines = append(lines, "#EXTINF:4.000000,")
+		lines = append(lines, s.name)
+	}
+
+	playlist := PlaylistPath(dir)
+	data := []byte(strings.Join(lines, "\n") + "\n")
+	tmp := playlist + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return fmt.Errorf("write live playlist tmp: %w", err)
+	}
+	if err := os.Rename(tmp, playlist); err != nil {
+		return fmt.Errorf("rename live playlist: %w", err)
+	}
+
+	return nil
 }

@@ -442,6 +442,24 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 		}
 	}
 
+	isLiveSource := source.Type == "rtmp" || source.Type == "rtsp" || source.Type == "device" || source.Type == "hls"
+	if isLiveSource {
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := media.RefreshLivePlaylist(outputDir); err != nil {
+						log.Printf("refresh live playlist job %d: %v", jobID, err)
+					}
+				}
+			}
+		}()
+	}
+
 	if err := media.Transcode(ctx, tc, onProgress); err != nil {
 		if ctx.Err() != nil {
 			p := math.Float64frombits(lastProgress.Load())

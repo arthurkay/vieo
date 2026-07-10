@@ -33,7 +33,9 @@ func StreamHLS(dataDir string) http.HandlerFunc {
 		switch ext {
 		case ".m3u8":
 			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
 		case ".ts":
 			w.Header().Set("Content-Type", "video/mp2t")
 			w.Header().Set("Cache-Control", "public, max-age=3600")

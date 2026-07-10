@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
+import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -9,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { Plus, Radio, Play, HardDrive, Pencil, Trash2, ExternalLink } from 'lucide-react'
+import { Plus, Radio, Play, HardDrive, Pencil, Trash2, ExternalLink, Globe, Lock } from 'lucide-react'
 import type { Job, Channel, Source, Output } from '@/types'
 
 function formatBytes(bytes: number): string {
@@ -24,7 +25,7 @@ function StorageBadge({ outputId }: { outputId: number }) {
   const { data, isLoading } = useQuery({
     queryKey: ['output-storage', outputId],
     queryFn: () => api.outputs.storage(outputId),
-    refetchInterval: 5000,
+    refetchInterval: 10000,
   })
 
   if (isLoading) return <Skeleton className="h-4 w-16" />
@@ -48,11 +49,14 @@ interface PlayableStream {
 export default function Channels() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [description, setDescription] = useState('')
+  const [isPublic, setIsPublic] = useState(false)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [deleteName, setDeleteName] = useState('')
 
@@ -91,7 +95,7 @@ export default function Channels() {
   }
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; slug: string; description: string }) =>
+    mutationFn: (data: { name: string; slug: string; description: string; public: boolean }) =>
       api.channels.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] })
@@ -101,7 +105,7 @@ export default function Channels() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: { id: number; name: string; slug: string; description: string }) =>
+    mutationFn: (data: { id: number; name: string; slug: string; description: string; public: boolean }) =>
       api.channels.update(data.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] })
@@ -122,22 +126,24 @@ export default function Channels() {
     setName('')
     setSlug('')
     setDescription('')
+    setIsPublic(false)
   }
 
-  function startEdit(ch: { id: number; name: string; slug: string; description: string }) {
+  function startEdit(ch: Channel) {
     setEditId(ch.id)
     setName(ch.name)
     setSlug(ch.slug)
     setDescription(ch.description)
+    setIsPublic(ch.public)
     setShowForm(true)
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (editId) {
-      updateMutation.mutate({ id: editId, name, slug, description })
+      updateMutation.mutate({ id: editId, name, slug, description, public: isPublic })
     } else {
-      createMutation.mutate({ name, slug, description })
+      createMutation.mutate({ name, slug, description, public: isPublic })
     }
   }
 
@@ -151,9 +157,11 @@ export default function Channels() {
             <h2 className="text-2xl font-bold tracking-tight">Channels</h2>
             <p className="text-muted-foreground">Manage your content channels</p>
           </div>
-          <Button onClick={() => { resetForm(); setShowForm(true) }}>
-            <Plus className="h-4 w-4 mr-2" /> New Channel
-          </Button>
+          {isAdmin && (
+            <Button onClick={() => { resetForm(); setShowForm(true) }}>
+              <Plus className="h-4 w-4 mr-2" /> New Channel
+            </Button>
+          )}
         </div>
       </div>
 
@@ -178,6 +186,21 @@ export default function Channels() {
                     <Label htmlFor="channel-desc">Description</Label>
                     <Input id="channel-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
                   </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Label className="text-sm font-medium">Visibility</Label>
+                  <button
+                    type="button"
+                    onClick={() => setIsPublic(!isPublic)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border transition-colors ${
+                      isPublic
+                        ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-700 dark:text-green-400'
+                        : 'bg-muted border-border text-muted-foreground'
+                    }`}
+                  >
+                    {isPublic ? <Globe className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                    {isPublic ? 'Public — visible to guests' : 'Private — admin only'}
+                  </button>
                 </div>
                 <div className="flex gap-2">
                   <Button type="submit" disabled={isMutating}>{editId ? 'Update' : 'Create'}</Button>
@@ -218,18 +241,25 @@ export default function Channels() {
                       {ch.description && (
                         <span className="text-xs text-muted-foreground">— {ch.description}</span>
                       )}
+                      <Badge variant={ch.public ? 'default' : 'secondary'} className="text-xs">
+                        {ch.public ? 'Public' : 'Private'}
+                      </Badge>
                       <Badge variant="secondary" className="text-xs">{streams.length} stream{streams.length !== 1 ? 's' : ''}</Badge>
                     </div>
                     <div className="flex items-center gap-1">
                       <Button variant="ghost" size="sm" onClick={() => navigate(`/channels/${ch.id}`)}>
                         <ExternalLink className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => startEdit(ch)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => { setDeleteId(ch.id); setDeleteName(ch.name) }}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      {isAdmin && (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => startEdit(ch)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => { setDeleteId(ch.id); setDeleteName(ch.name) }}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </CardHeader>

@@ -107,6 +107,24 @@ func UserCount(ctx context.Context, db *sql.DB) (int, error) {
 	return count, err
 }
 
+func ResetPassword(ctx context.Context, db *sql.DB, id int64, password string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	result, err := db.ExecContext(ctx,
+		"UPDATE users SET password_hash = ? WHERE id = ?", string(hash), id,
+	)
+	if err != nil {
+		return fmt.Errorf("reset password: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
+}
+
 func CheckPassword(user *User, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) == nil
 }

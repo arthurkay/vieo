@@ -10,6 +10,7 @@ import Sources from './pages/Sources'
 import Jobs from './pages/Jobs'
 import Player from './pages/Player'
 import Login from './pages/Login'
+import Users from './pages/Users'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -58,6 +59,7 @@ function AppRoutes() {
                     <>
                       <Route path="/sources" element={<Sources />} />
                       <Route path="/jobs" element={<Jobs />} />
+                      <Route path="/users" element={<Users />} />
                     </>
                   )}
                   <Route path="*" element={<Navigate to="/" replace />} />

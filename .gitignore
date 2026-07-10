@@ -7,3 +7,5 @@ tmp/
 .env
 data/
 vieo
+web/tsconfig.tsbuildinfo 
+vieo.db-journal

@@ -45,6 +45,8 @@ export const api = {
       list: () => request<User[]>('/auth/users'),
       create: (data: { username: string; password: string; role: string }) =>
         request<User>('/auth/users', { method: 'POST', body: JSON.stringify(data) }),
+      resetPassword: (id: number, password: string) =>
+        request<void>(`/auth/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }),
       delete: (id: number) =>
         request<void>(`/auth/users/${id}`, { method: 'DELETE' }),
     },

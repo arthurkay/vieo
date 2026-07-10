@@ -23,6 +23,7 @@ func (s *Server) setupRoutes() {
 			r.Use(RequireRole("admin"))
 			r.Get("/", handler.ListUsers(s.DB))
 			r.Post("/", handler.CreateUser(s.DB))
+			r.Put("/{id}/password", handler.ResetPassword(s.DB))
 			r.Delete("/{id}", handler.DeleteUser(s.DB))
 		})
 	})

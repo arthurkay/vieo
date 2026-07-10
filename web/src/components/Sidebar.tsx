@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   LogOut,
+  Users,
 } from 'lucide-react'
 
 export function SidebarToggle({ onClick }: { onClick: () => void }) {
@@ -44,6 +45,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
     ...(isAdmin ? [
       { to: '/sources', label: 'Sources', icon: Video },
       { to: '/jobs', label: 'Jobs', icon: Activity },
+      { to: '/users', label: 'Users', icon: Users },
     ] : []),
   ]
 
