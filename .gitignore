@@ -1,7 +1,9 @@
 vieo.db
-node_modules/
+web/node_modules/
+web/dist/
 dist/
 tmp/
 *.log
 .env
 data/
+vieo
