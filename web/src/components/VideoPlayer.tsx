@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Hls from 'hls.js'
 import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
@@ -23,6 +23,17 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { TimelineEvent } from '@/types'
 
+interface FilmstripMeta {
+  interval: number
+  tileWidth: number
+  tileHeight: number
+  gridCols: number
+  gridRows: number
+  startTime: string
+  totalDuration: number
+  tiles: { file: string; index: number; count: number }[]
+}
+
 interface VideoPlayerProps {
   streamUrl: string
   posterUrl?: string
@@ -42,12 +53,25 @@ function formatTime(seconds: number): string {
   if (h > 0) {
     return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
-  return `${m}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s)}`
+}
+
+function formatDateTime(startISO: string, offsetSec: number): string {
+  const start = new Date(startISO)
+  const d = new Date(start.getTime() + offsetSec * 1000)
+  const h = d.getHours()
+  const m = d.getMinutes()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(h)}:${pad(m)}`
+}
+
+function formatDateTimeFull(startISO: string, offsetSec: number): string {
+  const start = new Date(startISO)
+  const d = new Date(start.getTime() + offsetSec * 1000)
+  return d.toLocaleString()
 }
 
 const SPEEDS = [0.5, 1, 1.5, 2]
-const THUMB_WIDTH = 160
-const THUMB_HEIGHT = 90
 
 export default function VideoPlayer({
   streamUrl,
@@ -62,10 +86,7 @@ export default function VideoPlayer({
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
-  const thumbVideoRef = useRef<HTMLVideoElement>(null)
-  const thumbCanvasRef = useRef<HTMLCanvasElement>(null)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const thumbSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recoveryCountRef = useRef(0)
   const hlsRef = useRef<Hls | null>(null)
 
@@ -80,10 +101,11 @@ export default function VideoPlayer({
   const [seeking, setSeeking] = useState(false)
   const [seekValue, setSeekValue] = useState([0])
 
+  const [filmstripMeta, setFilmstripMeta] = useState<FilmstripMeta | null>(null)
+  const [filmstripImages, setFilmstripImages] = useState<Map<string, HTMLImageElement>>(new Map())
   const [thumbVisible, setThumbVisible] = useState(false)
   const [thumbX, setThumbX] = useState(0)
   const [thumbTime, setThumbTime] = useState(0)
-  const [thumbReady, setThumbReady] = useState(false)
 
   const [subtitleTracks, setSubtitleTracks] = useState<{ id: number; name: string }[]>([])
   const [activeSubtitle, setActiveSubtitle] = useState(-1)
@@ -103,6 +125,46 @@ export default function VideoPlayer({
     }, 3000)
   }, [])
 
+  // Load filmstrip metadata — reusable fetcher
+  const fetchFilmstrip = useCallback(() => {
+    const match = streamUrl.match(/\/api\/stream\/(\d+)\//)
+    if (!match) return
+    const outputId = match[1]
+
+    fetch(`/api/stream/${outputId}/thumbs.json`)
+      .then((r) => {
+        if (!r.ok) throw new Error('no filmstrip')
+        return r.json()
+      })
+      .then((meta: FilmstripMeta) => {
+        setFilmstripMeta(meta)
+        const images = new Map<string, HTMLImageElement>()
+        meta.tiles.forEach((tile) => {
+          const img = new Image()
+          img.src = `/api/stream/${outputId}/${tile.file}`
+          img.onload = () => {
+            images.set(tile.file, img)
+            setFilmstripImages(new Map(images))
+          }
+        })
+      })
+      .catch(() => {})
+  }, [streamUrl])
+
+  useEffect(() => {
+    fetchFilmstrip()
+  }, [fetchFilmstrip])
+
+  // Periodic refresh for live recordings
+  useEffect(() => {
+    if (!isLive) return
+    const interval = setInterval(() => {
+      fetchFilmstrip()
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [isLive, fetchFilmstrip])
+
+  // HLS setup
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
@@ -120,7 +182,7 @@ export default function VideoPlayer({
         liveDurationInfinity: false,
         maxBufferLength: 60,
         maxMaxBufferLength: 300,
-        backBufferLength: Infinity,
+        backBufferLength: 60,
         liveBackBufferLength: Infinity,
         maxBufferSize: 60 * 1024 * 1024,
       })
@@ -169,7 +231,7 @@ export default function VideoPlayer({
                   liveDurationInfinity: false,
                   maxBufferLength: 60,
                   maxMaxBufferLength: 300,
-                  backBufferLength: Infinity,
+                  backBufferLength: 60,
                   liveBackBufferLength: Infinity,
                   maxBufferSize: 60 * 1024 * 1024,
                 })
@@ -188,34 +250,11 @@ export default function VideoPlayer({
 
     return () => {
       if (durationInterval) clearInterval(durationInterval)
+      const current = hlsRef.current
       hlsRef.current = null
-      hls?.destroy()
+      current?.destroy()
     }
   }, [streamUrl, isLive])
-
-  useEffect(() => {
-    const thumbVideo = thumbVideoRef.current
-    if (!thumbVideo) return
-
-    let hls: Hls | null = null
-
-    if (Hls.isSupported()) {
-      hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: false,
-        maxBufferLength: 10,
-        maxMaxBufferLength: 10,
-      })
-      hls.loadSource(streamUrl)
-      hls.attachMedia(thumbVideo)
-    } else if (thumbVideo.canPlayType('application/vnd.apple.mpegurl')) {
-      thumbVideo.src = streamUrl
-    }
-
-    return () => {
-      hls?.destroy()
-    }
-  }, [streamUrl])
 
   useEffect(() => {
     const video = videoRef.current
@@ -266,7 +305,6 @@ export default function VideoPlayer({
     const onMouseMove = () => showControls()
     const onMouseLeave = () => {
       setThumbVisible(false)
-      if (thumbSeekTimerRef.current) clearTimeout(thumbSeekTimerRef.current)
       if (videoRef.current && !videoRef.current.paused) {
         setControlsVisible(false)
       }
@@ -409,11 +447,32 @@ export default function VideoPlayer({
     }, 'image/png')
   }
 
+  function getFilmstripFrame(timeSec: number): { src: string; x: number; y: number; w: number; h: number } | null {
+    if (!filmstripMeta || filmstripMeta.tiles.length === 0) return null
+
+    const frameIdx = Math.floor(timeSec / filmstripMeta.interval)
+    const tilesPerSheet = filmstripMeta.gridCols * filmstripMeta.gridRows
+    const sheetIdx = Math.floor(frameIdx / tilesPerSheet)
+    const localIdx = frameIdx % tilesPerSheet
+
+    const tile = filmstripMeta.tiles.find((t) => t.index === sheetIdx)
+    if (!tile) return null
+
+    const col = localIdx % filmstripMeta.gridCols
+    const row = Math.floor(localIdx / filmstripMeta.gridCols)
+
+    return {
+      src: tile.file,
+      x: col * filmstripMeta.tileWidth,
+      y: row * filmstripMeta.tileHeight,
+      w: filmstripMeta.tileWidth,
+      h: filmstripMeta.tileHeight,
+    }
+  }
+
   function handleTimelineHover(e: React.MouseEvent) {
     const timeline = timelineRef.current
-    const thumbVideo = thumbVideoRef.current
-    const canvas = thumbCanvasRef.current
-    if (!timeline || !thumbVideo || !canvas) return
+    if (!timeline) return
 
     const rect = timeline.getBoundingClientRect()
     const x = e.clientX - rect.left
@@ -423,38 +482,59 @@ export default function VideoPlayer({
     setThumbX(e.clientX - containerRef.current!.getBoundingClientRect().left)
     setThumbTime(time)
     setThumbVisible(true)
-    setThumbReady(false)
-
-    if (thumbSeekTimerRef.current) clearTimeout(thumbSeekTimerRef.current)
-    thumbSeekTimerRef.current = setTimeout(() => {
-      thumbVideo.currentTime = time
-    }, 50)
   }
 
   function handleTimelineLeave() {
     setThumbVisible(false)
-    if (thumbSeekTimerRef.current) clearTimeout(thumbSeekTimerRef.current)
   }
 
-  useEffect(() => {
-    const thumbVideo = thumbVideoRef.current
-    const canvas = thumbCanvasRef.current
-    if (!thumbVideo || !canvas) return
-
-    function drawFrame() {
-      const ctx = canvas!.getContext('2d')
-      if (!ctx || !thumbVideo!.videoWidth) return
-      canvas!.width = THUMB_WIDTH
-      canvas!.height = THUMB_HEIGHT
-      ctx.drawImage(thumbVideo!, 0, 0, THUMB_WIDTH, THUMB_HEIGHT)
-      setThumbReady(true)
-    }
-
-    thumbVideo.addEventListener('seeked', drawFrame)
-    return () => thumbVideo.removeEventListener('seeked', drawFrame)
-  }, [])
-
   const seekProgress = seeking ? seekValue[0] : currentTime
+
+  // Date/time labels along the seek bar
+  const timeLabels = useMemo(() => {
+    if (!startTime || duration <= 0) return []
+    const labels: { time: number; dateStr: string; pct: number }[] = []
+    const interval = duration <= 300 ? 30 : duration <= 3600 ? 60 : duration <= 86400 ? 300 : 3600
+    for (let t = 0; t < duration; t += interval) {
+      labels.push({
+        time: t,
+        dateStr: formatDateTime(startTime, t),
+        pct: (t / duration) * 100,
+      })
+    }
+    return labels
+  }, [startTime, duration])
+
+  const thumbFrame = thumbVisible && duration > 0 ? getFilmstripFrame(thumbTime) : null
+  const thumbImage = thumbFrame ? filmstripImages.get(thumbFrame.src) : null
+
+  // Pre-compute filmstrip tile positions for the persistent strip (thinned for long videos)
+  const filmstripTiles = useMemo(() => {
+    if (!filmstripMeta || filmstripMeta.tiles.length === 0 || duration <= 0) return []
+    const tilesPerSheet = filmstripMeta.gridCols * filmstripMeta.gridRows
+    const rawCount = Math.floor(duration / filmstripMeta.interval)
+    const targetTiles = 30
+    const skipFactor = Math.max(1, Math.floor(rawCount / targetTiles))
+    const result: { file: string; leftPct: number; widthPct: number; bgX: number; bgY: number; bgW: number; bgH: number }[] = []
+    for (const sheet of filmstripMeta.tiles) {
+      for (let i = 0; i < sheet.count; i++) {
+        const globalIdx = sheet.index * tilesPerSheet + i
+        if (globalIdx % skipFactor !== 0) continue
+        const col = i % filmstripMeta.gridCols
+        const row = Math.floor(i / filmstripMeta.gridCols)
+        result.push({
+          file: sheet.file,
+          leftPct: (globalIdx * filmstripMeta.interval / duration) * 100,
+          widthPct: (skipFactor * filmstripMeta.interval / duration) * 100,
+          bgX: col * filmstripMeta.tileWidth,
+          bgY: row * filmstripMeta.tileHeight,
+          bgW: filmstripMeta.gridCols * filmstripMeta.tileWidth,
+          bgH: filmstripMeta.gridRows * filmstripMeta.tileHeight,
+        })
+      }
+    }
+    return result
+  }, [filmstripMeta, duration])
 
   return (
     <div
@@ -477,16 +557,7 @@ export default function VideoPlayer({
         poster={posterUrl}
       />
 
-      {/* Hidden video for thumbnail generation */}
-      <video
-        ref={thumbVideoRef}
-        className="hidden"
-        muted
-        playsInline
-      />
-      <canvas ref={thumbCanvasRef} className="hidden" />
-
-      {/* Thumbnail preview */}
+      {/* Thumbnail preview — sprite-based */}
       {thumbVisible && duration > 0 && (
         <div
           className="absolute z-30 pointer-events-none"
@@ -497,32 +568,31 @@ export default function VideoPlayer({
           }}
         >
           <div className="rounded-md overflow-hidden border border-white/20 shadow-xl bg-black">
-            {thumbReady ? (
-              <canvas
-                ref={(el) => {
-                  if (el && thumbCanvasRef.current) {
-                    const ctx = el.getContext('2d')
-                    const srcCtx = thumbCanvasRef.current.getContext('2d')
-                    if (ctx && srcCtx) {
-                      el.width = THUMB_WIDTH
-                      el.height = THUMB_HEIGHT
-                      ctx.drawImage(thumbCanvasRef.current, 0, 0)
-                    }
-                  }
+            {thumbImage && thumbFrame ? (
+              <div
+                style={{
+                  width: thumbFrame.w,
+                  height: thumbFrame.h,
+                  backgroundImage: `url(${(thumbImage as any).src || ''})`,
+                  backgroundPosition: `-${thumbFrame.x}px -${thumbFrame.y}px`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: `${filmstripMeta!.gridCols * filmstripMeta!.tileWidth}px ${filmstripMeta!.gridRows * filmstripMeta!.tileHeight}px`,
                 }}
-                width={THUMB_WIDTH}
-                height={THUMB_HEIGHT}
-                className="block"
               />
             ) : (
               <div
                 className="flex items-center justify-center bg-black/80"
-                style={{ width: THUMB_WIDTH, height: THUMB_HEIGHT }}
+                style={{ width: 160, height: 90 }}
               >
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               </div>
             )}
             <div className="text-center text-white text-xs font-mono py-1 bg-black/80">
+              {startTime ? (
+                <div>
+                  <div>{formatDateTimeFull(startTime, thumbTime)}</div>
+                </div>
+              ) : null}
               {formatTime(thumbTime)}
             </div>
           </div>
@@ -565,6 +635,21 @@ export default function VideoPlayer({
         )}
       >
         <div className="bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-8 pb-2 px-3">
+          {/* Date/time labels */}
+          {timeLabels.length > 0 && startTime && (
+            <div className="relative h-4 mb-1 px-16">
+              {timeLabels.map((label, i) => (
+                <span
+                  key={i}
+                  className="absolute text-[9px] text-white/60 font-mono -translate-x-1/2"
+                  style={{ left: `${label.pct}%` }}
+                >
+                  {label.dateStr}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Timeline */}
           <div
             ref={timelineRef}
@@ -576,7 +661,26 @@ export default function VideoPlayer({
             <span className="text-white text-xs font-mono tabular-nums w-16 text-right shrink-0">
               {formatTime(seekProgress)}
             </span>
-            <div className="flex-1 relative">
+            <div className="flex-1 relative" style={{ minHeight: filmstripTiles.length > 0 ? '48px' : undefined }}>
+              {/* Filmstrip strip — persistent thumbnails along the timeline */}
+              {filmstripTiles.length > 0 && (
+                <div className="absolute inset-x-0 top-0 bottom-0 overflow-hidden rounded-sm pointer-events-none">
+                  {filmstripTiles.map((tile, i) => (
+                    <div
+                      key={i}
+                      className="absolute top-0 bottom-0"
+                      style={{
+                        left: `${tile.leftPct}%`,
+                        width: `${tile.widthPct}%`,
+                        backgroundImage: `url(${(filmstripImages.get(tile.file) as any)?.src || ''})`,
+                        backgroundPosition: `-${tile.bgX}px -${tile.bgY}px`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundSize: `${tile.bgW}px ${tile.bgH}px`,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
               {/* Event markers */}
               {events.length > 0 && duration > 0 && (
                 <div className="absolute inset-x-0 top-0 h-2 pointer-events-none z-10">
@@ -596,7 +700,6 @@ export default function VideoPlayer({
               {/* Clip selection overlay */}
               {clipMode && duration > 0 && (
                 <div className="absolute inset-x-0 top-0 h-4 pointer-events-none z-10">
-                  {/* Selected region */}
                   <div
                     className="absolute top-0 h-full bg-blue-500/30 border-y border-blue-500/60"
                     style={{
@@ -604,13 +707,11 @@ export default function VideoPlayer({
                       width: `${((clipEnd - clipStart) / duration) * 100}%`,
                     }}
                   />
-                  {/* Start handle */}
                   <div
                     className="absolute top-0 h-full w-1 bg-blue-500 cursor-ew-resize pointer-events-auto"
                     style={{ left: `${(clipStart / duration) * 100}%`, transform: 'translateX(-50%)' }}
                     onMouseDown={(e) => handleClipMouseDown('start', e)}
                   />
-                  {/* End handle */}
                   <div
                     className="absolute top-0 h-full w-1 bg-blue-500 cursor-ew-resize pointer-events-auto"
                     style={{ left: `${(clipEnd / duration) * 100}%`, transform: 'translateX(-50%)' }}
@@ -628,8 +729,8 @@ export default function VideoPlayer({
                   handleSeekEnd(seekValue)
                   ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
                 }}
-                className="flex-1 cursor-pointer"
-                trackClassName="h-1.5"
+                className="flex-1 cursor-pointer relative z-20"
+                trackClassName={filmstripTiles.length > 0 ? 'h-1.5 bg-white/10' : 'h-1.5'}
                 thumbClassName="h-3.5 w-3.5"
               />
             </div>
@@ -654,7 +755,6 @@ export default function VideoPlayer({
 
           {/* Bottom row */}
           <div className="flex items-center gap-1">
-            {/* Play/Pause */}
             <button
               onClick={(e) => { e.stopPropagation(); togglePlay() }}
               className="p-1.5 rounded-md text-white hover:bg-white/20 transition-colors"
@@ -663,7 +763,6 @@ export default function VideoPlayer({
               {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 fill-white" />}
             </button>
 
-            {/* Speed */}
             <button
               onClick={(e) => { e.stopPropagation(); cycleSpeed() }}
               className="px-2 py-1 rounded-md text-white text-xs font-medium hover:bg-white/20 transition-colors min-w-[40px] flex items-center justify-center gap-1"
@@ -673,7 +772,6 @@ export default function VideoPlayer({
               {speed}x
             </button>
 
-            {/* Subtitles */}
             {subtitleTracks.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -710,7 +808,6 @@ export default function VideoPlayer({
               </DropdownMenu>
             )}
 
-            {/* Export clip */}
             {showExportButton && !isLive && duration > 0 && (
               <button
                 onClick={(e) => { e.stopPropagation(); toggleClipMode() }}
@@ -724,10 +821,8 @@ export default function VideoPlayer({
               </button>
             )}
 
-            {/* Spacer */}
             <div className="flex-1" />
 
-            {/* Volume */}
             <button
               onClick={(e) => { e.stopPropagation(); toggleMute() }}
               className="p-1.5 rounded-md text-white hover:bg-white/20 transition-colors"
@@ -749,7 +844,6 @@ export default function VideoPlayer({
               thumbClassName="h-3 w-3"
             />
 
-            {/* Screenshot */}
             <button
               onClick={(e) => { e.stopPropagation(); captureScreenshot() }}
               className="p-1.5 rounded-md text-white hover:bg-white/20 transition-colors"
@@ -758,7 +852,6 @@ export default function VideoPlayer({
               <Camera className="h-4 w-4" />
             </button>
 
-            {/* Fullscreen */}
             <button
               onClick={(e) => { e.stopPropagation(); toggleFullscreen() }}
               className="p-1.5 rounded-md text-white hover:bg-white/20 transition-colors"

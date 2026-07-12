@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import VideoPlayer from '@/components/VideoPlayer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -111,7 +112,9 @@ export default function Player() {
       duration: duration,
     }).then(() => {
       queryClient.invalidateQueries({ queryKey: ['exports'] })
-    }).catch(() => {})
+    }).catch((err) => {
+      alert(`Export failed: ${err.message}`)
+    })
   }, [job, queryClient])
 
   const handleAddEvent = useCallback(() => {
@@ -342,8 +345,4 @@ function formatTime(seconds: number): string {
     return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
   return `${m}:${String(s)}`
-}
-
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(' ')
 }

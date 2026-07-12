@@ -45,6 +45,13 @@ func GetChannel(db *sql.DB) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
+
+		user := auth.UserFromContext(r.Context())
+		if user == nil && !channel.Public {
+			http.Error(w, "channel not found", http.StatusNotFound)
+			return
+		}
+
 		writeJSON(w, channel)
 	}
 }

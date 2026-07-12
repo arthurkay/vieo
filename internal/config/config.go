@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -39,12 +40,25 @@ func Load() (*Config, error) {
 	flag.Parse()
 
 	if c.JWTSecret == "" {
-		b := make([]byte, 32)
-		if _, err := rand.Read(b); err != nil {
-			return nil, fmt.Errorf("generate jwt secret: %w", err)
+		secretFile := filepath.Join(c.DataDir, ".jwt_secret")
+		data, err := os.ReadFile(secretFile)
+		if err == nil && len(data) > 0 {
+			c.JWTSecret = string(data)
+			log.Printf("loaded JWT secret from %s", secretFile)
+		} else {
+			b := make([]byte, 32)
+			if _, err := rand.Read(b); err != nil {
+				return nil, fmt.Errorf("generate jwt secret: %w", err)
+			}
+			c.JWTSecret = hex.EncodeToString(b)
+			if err := os.MkdirAll(c.DataDir, 0755); err != nil {
+				log.Printf("warning: could not create data dir for jwt secret: %v", err)
+			} else if err := os.WriteFile(secretFile, []byte(c.JWTSecret), 0600); err != nil {
+				log.Printf("warning: could not persist jwt secret: %v", err)
+			} else {
+				log.Printf("generated and persisted JWT secret to %s", secretFile)
+			}
 		}
-		c.JWTSecret = hex.EncodeToString(b)
-		log.Printf("auto-generated JWT secret (set VIEO_JWT_SECRET to persist)")
 	}
 
 	if c.DiskWarn <= 0 || c.DiskWarn > 100 {

@@ -124,9 +124,12 @@ func (m *Manager) StopJob(ctx context.Context, jobID int64) error {
 	job, err := models.GetJob(ctx, m.DB, jobID)
 	if err == nil && job.OutputID > 0 {
 		outputDir := media.OutputDir(m.DataDir, job.OutputID)
-		if err := media.FinalizePlaylist(outputDir); err != nil {
-			log.Printf("finalize playlist job %d: %v", jobID, err)
-		}
+		go func() {
+			if err := media.FinalizePlaylist(context.Background(), outputDir); err != nil {
+				log.Printf("finalize playlist job %d: %v", jobID, err)
+			}
+			m.generateFilmstrip(job.OutputID, job.CreatedAt)
+		}()
 	}
 
 	return models.UpdateJobStatus(ctx, m.DB, jobID, "stopped", 0, "stopped by user")
@@ -144,9 +147,12 @@ func (m *Manager) PauseJob(ctx context.Context, jobID int64) error {
 	job, err := models.GetJob(ctx, m.DB, jobID)
 	if err == nil && job.OutputID > 0 {
 		outputDir := media.OutputDir(m.DataDir, job.OutputID)
-		if err := media.FinalizePlaylist(outputDir); err != nil {
-			log.Printf("finalize playlist job %d: %v", jobID, err)
-		}
+		go func() {
+			if err := media.FinalizePlaylist(context.Background(), outputDir); err != nil {
+				log.Printf("finalize playlist job %d: %v", jobID, err)
+			}
+			m.generateFilmstrip(job.OutputID, job.CreatedAt)
+		}()
 	}
 
 	return models.UpdateJobStatus(ctx, m.DB, jobID, "paused", 0, "paused by user")
@@ -229,9 +235,11 @@ func (m *Manager) StopAll(ctx context.Context) {
 		job, err := models.GetJob(ctx, m.DB, id)
 		if err == nil && job.OutputID > 0 {
 			outputDir := media.OutputDir(m.DataDir, job.OutputID)
-			if ferr := media.FinalizePlaylist(outputDir); ferr != nil {
-				log.Printf("finalize playlist job %d: %v", id, ferr)
-			}
+			go func(dir string, jid int64) {
+				if ferr := media.FinalizePlaylist(context.Background(), dir); ferr != nil {
+					log.Printf("finalize playlist job %d: %v", jid, ferr)
+				}
+			}(outputDir, id)
 		}
 
 		if err := models.UpdateJobStatus(ctx, m.DB, id, "paused", 0, "service stopping"); err != nil {
@@ -255,9 +263,11 @@ func (m *Manager) PauseJobs(ctx context.Context) {
 		job, err := models.GetJob(ctx, m.DB, id)
 		if err == nil && job.OutputID > 0 {
 			outputDir := media.OutputDir(m.DataDir, job.OutputID)
-			if ferr := media.FinalizePlaylist(outputDir); ferr != nil {
-				log.Printf("finalize playlist job %d: %v", id, ferr)
-			}
+			go func(dir string, jid int64) {
+				if ferr := media.FinalizePlaylist(context.Background(), dir); ferr != nil {
+					log.Printf("finalize playlist job %d: %v", jid, ferr)
+				}
+			}(outputDir, id)
 		}
 
 		if err := models.UpdateJobStatus(ctx, m.DB, id, "paused", 0, "disk space low"); err != nil {
@@ -526,7 +536,7 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if err := media.RefreshLivePlaylist(outputDir); err != nil {
+					if err := media.RefreshLivePlaylist(ctx, outputDir); err != nil {
 						log.Printf("refresh live playlist job %d: %v", jobID, err)
 					}
 				}
@@ -536,15 +546,6 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 
 	if err := media.Transcode(ctx, tc, onProgress); err != nil {
 		if ctx.Err() != nil {
-			p := math.Float64frombits(lastProgress.Load())
-			if outputErr := media.FinalizePlaylist(outputDir); outputErr != nil {
-				log.Printf("finalize playlist job %d: %v", jobID, outputErr)
-			}
-			if updateErr := models.UpdateJobStatus(ctx, m.DB, jobID, "paused", p, "interrupted"); updateErr == nil {
-				m.emit(JobEvent{Type: EventPaused, Payload: map[string]any{
-					"id": jobID, "status": "paused", "reason": "interrupted",
-				}})
-			}
 			return
 		}
 
@@ -555,8 +556,13 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 		return
 	}
 
-	if err := media.FinalizePlaylist(outputDir); err != nil {
+	if err := media.FinalizePlaylist(ctx, outputDir); err != nil {
 		log.Printf("finalize playlist job %d: %v", jobID, err)
+	}
+
+	completedJob, jobErr := models.GetJob(ctx, m.DB, jobID)
+	if jobErr == nil {
+		go m.generateFilmstrip(outputID, completedJob.CreatedAt)
 	}
 
 	_ = models.CompleteJob(ctx, m.DB, jobID)
@@ -602,22 +608,23 @@ func (m *Manager) StartExport(ctx context.Context, sourceID, outputID int64, sta
 			"id": export.ID, "status": "processing", "progress": 0.0,
 		}})
 
-		var lastProgress float64
+		var lastProgress atomic.Uint64
 		progressTicker := time.NewTicker(2 * time.Second)
 		defer progressTicker.Stop()
 
 		go func() {
 			for range progressTicker.C {
+				p := math.Float64frombits(lastProgress.Load())
 				m.emit(JobEvent{Type: EventExportProgress, Payload: map[string]any{
-					"id": export.ID, "status": "processing", "progress": lastProgress,
+					"id": export.ID, "status": "processing", "progress": p,
 				}})
-				_ = models.UpdateExportStatus(exportCtx, m.DB, export.ID, "processing", lastProgress)
+				_ = models.UpdateExportStatus(exportCtx, m.DB, export.ID, "processing", p)
 			}
 		}()
 
 		onProgress := func(progress float64, line string) {
 			if progress >= 0 {
-				lastProgress = progress
+				lastProgress.Store(math.Float64bits(progress))
 			}
 		}
 
@@ -721,4 +728,26 @@ func (m *Manager) generateThumbnailWithRetry(ctx context.Context, source *models
 		case <-time.After(5 * time.Second):
 		}
 	}
+}
+
+func (m *Manager) generateFilmstrip(outputID int64, createdAt string) {
+	outputDir := media.OutputDir(m.DataDir, outputID)
+
+	// Parse the job's created_at time
+	createdAtTime := time.Now()
+	if t, err := time.Parse("2006-01-02 15:04:05", createdAt); err == nil {
+		createdAtTime = t
+	} else if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+		createdAtTime = t
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	if err := media.GenerateFilmstrip(ctx, outputDir, createdAtTime, 0); err != nil {
+		log.Printf("generate filmstrip output %d: %v", outputID, err)
+		return
+	}
+	_ = models.MarkFilmstripGenerated(ctx, m.DB, outputID)
+	log.Printf("filmstrip generated for output %d", outputID)
 }

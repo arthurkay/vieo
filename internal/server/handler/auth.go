@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/arthur/vieo/internal/auth"
@@ -13,12 +14,54 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+type loginAttempt struct {
+	count     int
+	firstAt   time.Time
+	lastAt    time.Time
+}
+
+var (
+	loginMu      sync.Mutex
+	loginTracker = make(map[string]*loginAttempt)
+)
+
+func trackLoginAttempt(ip string) bool {
+	loginMu.Lock()
+	defer loginMu.Unlock()
+
+	now := time.Now()
+	a, exists := loginTracker[ip]
+	if !exists {
+		loginTracker[ip] = &loginAttempt{count: 1, firstAt: now, lastAt: now}
+		return true
+	}
+
+	if now.Sub(a.firstAt) > 5*time.Minute {
+		loginTracker[ip] = &loginAttempt{count: 1, firstAt: now, lastAt: now}
+		return true
+	}
+
+	a.count++
+	a.lastAt = now
+	return a.count <= 10
+}
+
 func Login(db *sql.DB, jwtSecret string) http.HandlerFunc {
 	type loginRequest struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			ip = fwd
+		}
+
+		if !trackLoginAttempt(ip) {
+			http.Error(w, "too many attempts, try again later", http.StatusTooManyRequests)
+			return
+		}
+
 		var req loginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)

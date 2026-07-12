@@ -77,3 +77,13 @@ func GetOutputBySource(ctx context.Context, db *sql.DB, sourceID int64) (*Output
 	}
 	return &o, nil
 }
+
+func MarkFilmstripGenerated(ctx context.Context, db *sql.DB, outputID int64) error {
+	_, err := db.ExecContext(ctx,
+		"UPDATE outputs SET filmstrip_generated = 1 WHERE id = ?", outputID,
+	)
+	if err != nil {
+		return fmt.Errorf("mark filmstrip generated: %w", err)
+	}
+	return nil
+}

@@ -155,7 +155,11 @@ func isTimeInRange(start, end, current string) bool {
 	if end == "" {
 		return current >= start
 	}
-	return current >= start && current <= end
+	if start <= end {
+		return current >= start && current <= end
+	}
+	// Overnight range (e.g., 22:00 -> 02:00)
+	return current >= start || current <= end
 }
 
 func dayOfWeek(t time.Time) string {

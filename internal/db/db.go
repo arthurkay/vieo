@@ -224,5 +224,18 @@ func (db *DB) migrate(ctx context.Context) error {
 		}
 		log.Printf("migrated sources table: removed restrictive type CHECK constraint")
 	}
+	// Add filmstrip_generated column to outputs if missing
+	var hasFilmstrip int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('outputs') WHERE name='filmstrip_generated'").Scan(&hasFilmstrip); err != nil {
+		log.Printf("check filmstrip_generated column: %v", err)
+		hasFilmstrip = 1
+	}
+	if hasFilmstrip == 0 {
+		if _, err := db.ExecContext(ctx,
+			"ALTER TABLE outputs ADD COLUMN filmstrip_generated INTEGER NOT NULL DEFAULT 0",
+		); err != nil {
+			return fmt.Errorf("add filmstrip_generated column: %w", err)
+		}
+	}
 	return nil
 }

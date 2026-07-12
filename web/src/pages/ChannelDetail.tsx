@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
+import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -19,6 +20,8 @@ export default function ChannelDetail() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const channelId = parseInt(id || '0')
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   const [showSourceForm, setShowSourceForm] = useState(false)
   const [sourceType, setSourceType] = useState<Source['type']>('file')
@@ -33,17 +36,19 @@ export default function ChannelDetail() {
   const { data: sources, isLoading: sourcesLoading } = useQuery({
     queryKey: ['sources', channelId],
     queryFn: () => api.sources.list(channelId),
-    enabled: !!channelId,
+    enabled: !!channelId && isAdmin,
   })
 
   const { data: outputs } = useQuery({
     queryKey: ['outputs'],
     queryFn: api.outputs.list,
+    enabled: isAdmin,
   })
 
   const { data: jobs } = useQuery({
     queryKey: ['jobs'],
     queryFn: () => api.jobs.list(),
+    enabled: isAdmin,
   })
 
   const createSourceMutation = useMutation({
@@ -92,9 +97,11 @@ export default function ChannelDetail() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Sources</CardTitle>
-            <Button size="sm" onClick={() => setShowSourceForm(!showSourceForm)}>
-              <Plus className="h-4 w-4 mr-1" /> Add Source
-            </Button>
+            {isAdmin && (
+              <Button size="sm" onClick={() => setShowSourceForm(!showSourceForm)}>
+                <Plus className="h-4 w-4 mr-1" /> Add Source
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             {showSourceForm && (
@@ -177,7 +184,7 @@ export default function ChannelDetail() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            {!output && (
+                            {isAdmin && !output && (
                               <Button
                                 size="sm"
                                 variant="outline"

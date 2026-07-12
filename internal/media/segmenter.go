@@ -1,13 +1,16 @@
 package media
 
 import (
+	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func EnsureOutputDir(dir string) error {
@@ -127,7 +130,7 @@ func LastSegmentNumber(dir string) (int, error) {
 	return max, nil
 }
 
-func FinalizePlaylist(dir string) error {
+func FinalizePlaylist(ctx context.Context, dir string) error {
 	segments, err := ListSegments(dir)
 	if err != nil {
 		return fmt.Errorf("list segments: %w", err)
@@ -137,8 +140,9 @@ func FinalizePlaylist(dir string) error {
 	}
 
 	type seg struct {
-		name string
-		num  int
+		name     string
+		num      int
+		duration float64
 	}
 	var parsed []seg
 	for _, name := range segments {
@@ -147,7 +151,11 @@ func FinalizePlaylist(dir string) error {
 			continue
 		}
 		n, _ := strconv.Atoi(m[1])
-		parsed = append(parsed, seg{name: name, num: n})
+		dur, _ := ProbeSegmentDuration(ctx, filepath.Join(dir, name))
+		if dur <= 0 {
+			dur = 4.0
+		}
+		parsed = append(parsed, seg{name: name, num: n, duration: dur})
 	}
 	if len(parsed) == 0 {
 		return fmt.Errorf("no valid segments in %s", dir)
@@ -157,14 +165,25 @@ func FinalizePlaylist(dir string) error {
 		return parsed[i].num < parsed[j].num
 	})
 
+	var maxDur float64
+	for _, s := range parsed {
+		if s.duration > maxDur {
+			maxDur = s.duration
+		}
+	}
+	targetDuration := int(math.Ceil(maxDur))
+	if targetDuration < 1 {
+		targetDuration = 4
+	}
+
 	var lines []string
 	lines = append(lines, "#EXTM3U")
 	lines = append(lines, "#EXT-X-VERSION:3")
-	lines = append(lines, "#EXT-X-TARGETDURATION:4")
+	lines = append(lines, fmt.Sprintf("#EXT-X-TARGETDURATION:%d", targetDuration))
 	lines = append(lines, fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", parsed[0].num))
 
 	for _, s := range parsed {
-		lines = append(lines, "#EXTINF:4.000000,")
+		lines = append(lines, fmt.Sprintf("#EXTINF:%.6f,", s.duration))
 		lines = append(lines, s.name)
 	}
 
@@ -191,7 +210,7 @@ func PrepareResume(dir string) (int, error) {
 	return maxSeg + 1, nil
 }
 
-func RefreshLivePlaylist(dir string) error {
+func RefreshLivePlaylist(ctx context.Context, dir string) error {
 	segments, err := ListSegments(dir)
 	if err != nil {
 		return fmt.Errorf("list segments: %w", err)
@@ -200,9 +219,13 @@ func RefreshLivePlaylist(dir string) error {
 		return nil
 	}
 
+	now := time.Now()
+	minAge := 3 * time.Second // segment must be at least 3s old to be complete
+
 	type seg struct {
-		name string
-		num  int
+		name     string
+		num      int
+		duration float64
 	}
 	var parsed []seg
 	for _, name := range segments {
@@ -211,7 +234,25 @@ func RefreshLivePlaylist(dir string) error {
 			continue
 		}
 		n, _ := strconv.Atoi(m[1])
-		parsed = append(parsed, seg{name: name, num: n})
+
+		// Guard: skip segments that are too small or still being written
+		segPath := filepath.Join(dir, name)
+		info, statErr := os.Stat(segPath)
+		if statErr != nil {
+			continue
+		}
+		if info.Size() < 10240 { // less than 10KB — likely incomplete
+			continue
+		}
+		if now.Sub(info.ModTime()) < minAge { // still being written by ffmpeg
+			continue
+		}
+
+		dur, _ := ProbeSegmentDuration(ctx, segPath)
+		if dur <= 0 {
+			dur = 4.0
+		}
+		parsed = append(parsed, seg{name: name, num: n, duration: dur})
 	}
 	if len(parsed) == 0 {
 		return nil
@@ -221,14 +262,25 @@ func RefreshLivePlaylist(dir string) error {
 		return parsed[i].num < parsed[j].num
 	})
 
+	var maxDur float64
+	for _, s := range parsed {
+		if s.duration > maxDur {
+			maxDur = s.duration
+		}
+	}
+	targetDuration := int(math.Ceil(maxDur))
+	if targetDuration < 1 {
+		targetDuration = 4
+	}
+
 	var lines []string
 	lines = append(lines, "#EXTM3U")
 	lines = append(lines, "#EXT-X-VERSION:3")
-	lines = append(lines, "#EXT-X-TARGETDURATION:4")
+	lines = append(lines, fmt.Sprintf("#EXT-X-TARGETDURATION:%d", targetDuration))
 	lines = append(lines, fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", parsed[0].num))
 
 	for _, s := range parsed {
-		lines = append(lines, "#EXTINF:4.000000,")
+		lines = append(lines, fmt.Sprintf("#EXTINF:%.6f,", s.duration))
 		lines = append(lines, s.name)
 	}
 

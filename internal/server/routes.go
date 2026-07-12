@@ -102,7 +102,12 @@ func (s *Server) setupRoutes() {
 
 	// Public routes
 	s.Router.Get("/api/stream/{id}/*", handler.StreamHLS(s.Config.DataDir))
-	s.Router.Get("/api/ws", handler.WebSocket(s.DB, s.Manager))
-	s.Router.Get("/api/jobs/{id}/events", handler.ListJobEvents(s.DB))
 	s.Router.HandleFunc("/*", s.serveFrontend)
+
+	// Protected routes (auth required, any role)
+	s.Router.Group(func(r chi.Router) {
+		r.Use(AuthMiddleware(s.DB, s.Config.JWTSecret))
+		r.Get("/api/ws", handler.WebSocket(s.DB, s.Manager))
+		r.Get("/api/jobs/{id}/events", handler.ListJobEvents(s.DB))
+	})
 }

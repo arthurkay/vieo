@@ -31,15 +31,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth()
   }, [checkAuth])
 
-  const login = async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string) => {
     const u = await api.auth.login(username, password)
     setUser(u)
-  }
+  }, [])
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await api.auth.logout()
     setUser(null)
-  }
+  }, [])
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>

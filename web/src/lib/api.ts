@@ -17,9 +17,10 @@ interface HealthResponse {
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const hasBody = options?.body !== undefined
   const res = await fetch(`${BASE}${url}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    ...(hasBody ? { headers: { 'Content-Type': 'application/json' } } : {}),
     ...options,
   })
   if (!res.ok) {

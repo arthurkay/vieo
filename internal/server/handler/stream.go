@@ -42,6 +42,12 @@ func StreamHLS(dataDir string) http.HandlerFunc {
 		case ".jpg", ".jpeg":
 			w.Header().Set("Content-Type", "image/jpeg")
 			w.Header().Set("Cache-Control", "public, max-age=3600")
+		case ".vtt":
+			w.Header().Set("Content-Type", "text/vtt")
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		case ".json":
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "public, max-age=3600")
 		default:
 			http.Error(w, "unsupported file type", http.StatusBadRequest)
 			return

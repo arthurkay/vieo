@@ -92,7 +92,7 @@ export default function Dashboard() {
       const channel = channelMap.get(source.channel_id)
       if (!channel) continue
       const sourceJobs = jobsBySource.get(source.id)
-      const latestJob = sourceJobs?.sort((a, b) => b.id - a.id)[0]
+      const latestJob = [...(sourceJobs || [])].sort((a, b) => b.id - a.id)[0]
       if (!latestJob) continue
       playableStreams.push({ channel, source, output, job: latestJob })
     }

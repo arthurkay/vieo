@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type MediaInfo struct {
@@ -201,7 +202,7 @@ func probeDeviceWithFFProbe(ctx context.Context, devicePath string) (*MediaInfo,
 		"-i", devicePath,
 	}
 
-	probeCtx, cancel := context.WithTimeout(ctx, 3000)
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(probeCtx, "ffprobe", args...)
@@ -367,4 +368,33 @@ func parseFrameRate(r string) string {
 		return r
 	}
 	return fmt.Sprintf("%.2f", num/den)
+}
+
+func ProbeSegmentDuration(ctx context.Context, segmentPath string) (float64, error) {
+	args := []string{
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_entries", "format=duration",
+		segmentPath,
+	}
+	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("ffprobe segment: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	var parsed struct {
+		Format struct {
+			Duration string `json:"duration"`
+		} `json:"format"`
+	}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		return 0, fmt.Errorf("parse ffprobe segment: %w", err)
+	}
+
+	dur, err := strconv.ParseFloat(parsed.Format.Duration, 64)
+	if err != nil || dur <= 0 {
+		return 4.0, nil // fallback to default
+	}
+	return dur, nil
 }

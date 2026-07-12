@@ -61,9 +61,9 @@ export default function Channels() {
   const [deleteName, setDeleteName] = useState('')
 
   const { data: channels, isLoading } = useQuery({ queryKey: ['channels'], queryFn: api.channels.list })
-  const { data: sources } = useQuery({ queryKey: ['sources'], queryFn: () => api.sources.list() })
-  const { data: outputs } = useQuery({ queryKey: ['outputs'], queryFn: api.outputs.list })
-  const { data: jobs } = useQuery({ queryKey: ['jobs'], queryFn: () => api.jobs.list() })
+  const { data: sources } = useQuery({ queryKey: ['sources'], queryFn: () => api.sources.list(), enabled: isAdmin })
+  const { data: outputs } = useQuery({ queryKey: ['outputs'], queryFn: api.outputs.list, enabled: isAdmin })
+  const { data: jobs } = useQuery({ queryKey: ['jobs'], queryFn: () => api.jobs.list(), enabled: isAdmin })
 
   const playableStreams: PlayableStream[] = []
   if (channels && sources && outputs && jobs) {
@@ -81,7 +81,7 @@ export default function Channels() {
       const channel = channelMap.get(source.channel_id)
       if (!channel) continue
       const sourceJobs = jobsBySource.get(source.id)
-      const latestJob = sourceJobs?.sort((a, b) => b.id - a.id)[0]
+      const latestJob = [...(sourceJobs || [])].sort((a, b) => b.id - a.id)[0]
       if (!latestJob) continue
       playableStreams.push({ channel, source, output, job: latestJob })
     }
