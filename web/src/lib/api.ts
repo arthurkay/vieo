@@ -80,7 +80,7 @@ export const api = {
     list: () => request<Output[]>('/outputs'),
     create: (data: Partial<Output>) =>
       request<Output>('/outputs', { method: 'POST', body: JSON.stringify(data) }),
-    storage: (id: number) => request<{ bytes: number }>(`/outputs/${id}/storage`),
+    storage: (id: number) => request<{ bytes: number; duration: number }>(`/outputs/${id}/storage`),
     delete: (id: number) =>
       request<void>(`/outputs/${id}`, { method: 'DELETE' }),
   },

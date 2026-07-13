@@ -18,6 +18,15 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return ''
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 function StorageBadge({ outputId }: { outputId: number }) {
   const { data, isLoading } = useQuery({
     queryKey: ['output-storage', outputId],
@@ -32,6 +41,12 @@ function StorageBadge({ outputId }: { outputId: number }) {
     <span className="text-xs text-muted-foreground flex items-center gap-1">
       <HardDrive className="h-3 w-3" />
       {formatBytes(data.bytes)}
+      {data.duration > 0 && (
+        <>
+          <span className="mx-0.5">&middot;</span>
+          {formatDuration(data.duration)}
+        </>
+      )}
     </span>
   )
 }

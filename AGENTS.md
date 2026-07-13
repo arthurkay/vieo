@@ -2,7 +2,7 @@
 
 ## Overview
 
-vieo is a Go-based video streaming platform that transcodes media sources into HLS for web playback. It manages channels, sources, outputs, encoding jobs, and scheduled recordings through a SQLite database. Features include JWT cookie-based auth with admin/guest roles, real-time WebSocket job updates, a custom HLS video player with thumbnail timeline scrubbing, and automatic live playlist management for continuous archive seeking.
+vieo is a Go-based video streaming platform that transcodes media sources into HLS for web playback. It manages channels, sources, outputs, encoding jobs, and scheduled recordings through a SQLite database. Features include JWT cookie-based auth with admin/guest roles, real-time WebSocket job updates, a custom HLS video player with thumbnail timeline scrubbing, automatic live playlist management for continuous archive seeking, filmstrip sprite sheet generation, and video export.
 
 ## Tech Stack
 
@@ -28,14 +28,16 @@ vieo/
 │   ├── auth/context.go           # Context key helpers for user session
 │   ├── config/config.go          # Config loading (flags → env → file)
 │   ├── db/
-│   │   ├── db.go                 # SQLite pool, migrations (16 tables)
+│   │   ├── db.go                 # SQLite pool, migrations (21 entries)
 │   │   └── models/
 │   │       ├── channel.go        # Channel CRUD, public/private listing
 │   │       ├── source.go         # Source CRUD, name editing, metadata updates
-│   │       ├── output.go         # Output CRUD, source-based lookup
+│   │       ├── output.go         # Output CRUD, source-based lookup, filmstrip tracking
 │   │       ├── job.go            # Job lifecycle, logs, status transitions
 │   │       ├── user.go           # User CRUD, bcrypt, password reset
-│   │       └── schedule.go       # Schedule CRUD, enabled listing, job binding
+│   │       ├── schedule.go       # Schedule CRUD, enabled listing, job binding
+│   │       ├── export.go         # Export clip CRUD, progress tracking
+│   │       └── event.go          # Timeline event CRUD (per-job markers)
 │   ├── disk/disk.go              # Disk usage monitoring utilities
 │   ├── server/
 │   │   ├── server.go             # HTTP server setup, static file serving
@@ -49,15 +51,18 @@ vieo/
 │   │       ├── outputs.go        # Output CRUD + storage info
 │   │       ├── jobs.go           # Job CRUD + stop/pause/resume/continue
 │   │       ├── schedules.go      # Schedule CRUD
-│   │       ├── stream.go         # HLS file serving (.m3u8, .ts, .jpg)
-│   │       ├── ws.go             # WebSocket hub + broadcast loop
+│   │       ├── exports.go        # Export clip creation, listing, download
+│   │       ├── events.go         # Timeline event CRUD (per-job markers)
+│   │       ├── stream.go         # HLS file serving (.m3u8, .ts, .jpg, .vtt, .json)
+│   │       ├── ws.go             # WebSocket hub + broadcast loop + ping/pong heartbeat
 │   │       └── helpers.go        # JSON response helpers
 │   ├── media/
 │   │   ├── engine.go             # ffmpeg transcode → HLS pipeline
-│   │   ├── probe.go              # ffprobe media info parsing (v4l2, file, stream)
-│   │   └── segmenter.go          # Playlist write/refresh, segment management
+│   │   ├── probe.go              # ffprobe media info parsing (v4l2, file, stream, segment)
+│   │   ├── segmenter.go          # Playlist write/refresh, segment management, duration cache
+│   │   └── filmstrip.go          # Thumbnail sprite sheet generation for timeline scrubbing
 │   └── job/
-│       ├── manager.go            # Job state machine + lifecycle + live refresh
+│       ├── manager.go            # Job state machine + lifecycle + live refresh + export
 │       ├── scheduler.go          # Scheduled recording auto-start/stop
 │       └── watcher.go            # Disk space monitor (pause/resume)
 ├── web/                          # React frontend
@@ -76,14 +81,14 @@ vieo/
 │   │   │   ├── Dashboard.tsx     # Overview: running jobs, disk, storage
 │   │   │   ├── Channels.tsx     # Channel list + create/edit (public/private, admin-only actions)
 │   │   │   ├── ChannelDetail.tsx # Channel sources + transcode controls
-│   │   │   ├── Sources.tsx       # Source list + inline name edit + schedules
+│   │   │   ├── Sources.tsx       # Source list + inline name edit + schedules + copy URL
 │   │   │   ├── Jobs.tsx          # Job list + logs + stop/pause/resume
-│   │   │   ├── Player.tsx        # HLS player with date/time seeking
+│   │   │   ├── Player.tsx        # HLS player with date/time seeking + timeline events + export
 │   │   │   ├── Users.tsx         # User management + password reset (admin)
 │   │   │   └── Login.tsx         # Login page
 │   │   └── components/
 │   │       ├── Sidebar.tsx       # Navigation (role-based visibility)
-│   │       ├── VideoPlayer.tsx   # Custom HLS player: controls, thumbnails, screenshot
+│   │       ├── VideoPlayer.tsx   # Custom HLS player: controls, filmstrip thumbnails, screenshot
 │   │       ├── storage-banner.tsx# Disk usage warning banner
 │   │       ├── theme-provider.tsx# Dark/light mode provider
 │   │       └── ui/               # shadcn components (16 files)
@@ -92,7 +97,7 @@ vieo/
 │   └── package.json
 ├── go.mod / go.sum
 ├── AGENTS.md                     # This file
-└── VIEO.md                       # Platform design document
+└── README.md                     # User-facing documentation
 ```
 
 ## Development Commands
@@ -193,6 +198,8 @@ cd web && npm run lint       # Lint
 | Manage users | Yes | No |
 | Manage schedules | Yes | No |
 | View HLS streams | Yes | Yes |
+| Create/export clips | Yes | No |
+| Manage timeline events | Yes | No |
 
 ### Auth middleware
 
@@ -220,7 +227,7 @@ POST   /api/auth/users/                   # Create user
 PUT    /api/auth/users/{id}/password      # Reset user password
 DELETE /api/auth/users/{id}               # Delete user
 
-# Sources (admin only)
+# Sources (admin only — 60s timeout)
 GET    /api/sources/                      # List sources (filter by ?channel_id=)
 POST   /api/sources/                      # Create source
 GET    /api/sources/{id}                  # Get source
@@ -243,6 +250,18 @@ POST   /api/jobs/{id}/continue           # Continue job
 GET    /api/jobs/{id}/logs               # List job logs
 DELETE /api/jobs/{id}                     # Delete job record (stops if running)
 
+# Timeline Events (admin for create/delete, auth for list)
+POST   /api/jobs/{id}/events             # Create timeline event on job
+GET    /api/jobs/{id}/events             # List events for a job (any auth)
+DELETE /api/events/{id}                   # Delete timeline event
+
+# Exports (admin only — 300s timeout)
+POST   /api/exports/                      # Create export clip
+GET    /api/exports/                      # List exports
+GET    /api/exports/{id}                  # Get export details
+GET    /api/exports/{id}/download         # Download export file
+DELETE /api/exports/{id}                  # Delete export
+
 # Schedules (admin only)
 GET    /api/schedules/                    # List schedules (filter by ?source_id=)
 POST   /api/schedules/                    # Create schedule
@@ -258,10 +277,10 @@ PUT    /api/channels/{id}                 # Update channel (admin only)
 DELETE /api/channels/{id}                 # Delete channel (admin only)
 
 # Streaming (public)
-GET    /api/stream/{id}/*                 # Serve HLS files (.m3u8, .ts, .jpg)
+GET    /api/stream/{id}/*                 # Serve HLS files (.m3u8, .ts, .jpg, .vtt, .json)
 
-# WebSocket (public)
-WS     /api/ws                            # Real-time job status updates
+# WebSocket (authenticated)
+WS     /api/ws                            # Real-time job status updates + 30s ping heartbeat
 
 # Frontend (public)
 *      /*                                 # React SPA static files
@@ -275,7 +294,16 @@ WS     /api/ws                            # Real-time job status updates
 {"type":"job:complete","payload":{"id":1,"status":"completed"}}
 {"type":"job:error","payload":{"id":1,"status":"failed","error":"..."}}
 {"type":"job:paused","payload":{"id":1,"status":"paused","reason":"interrupted"}}
+{"type":"export:progress","payload":{"id":1,"status":"running","progress":0.3}}
+{"type":"export:complete","payload":{"id":1,"status":"completed"}}
+{"type":"export:error","payload":{"id":1,"status":"failed","error":"..."}}
 ```
+
+### WebSocket Connection
+
+- Requires authentication (401 if not logged in)
+- Sends a ping every **30 seconds** to keep the connection alive through proxies
+- On client disconnect, the server removes the connection from the hub and closes cleanly
 
 ## Job State Machine
 
@@ -307,8 +335,9 @@ WS     /api/ws                            # Real-time job status updates
 - **Pause**: Cancels ffmpeg context → `FinalizePlaylist` writes `#EXT-X-ENDLIST` → saves last segment number
 - **Resume**: Reads last segment number → starts ffmpeg with `-start_number N+1` → continues playlist
 - **Stop**: Same as pause (finalizes playlist) → marks status `stopped`
-- **Live refresh**: For live sources (rtmp/rtsp/device/hls), a goroutine calls `RefreshLivePlaylist` every 5s, rebuilding the playlist from ALL `.ts` files on disk without `#EXT-X-ENDLIST`
+- **Live refresh**: For live sources (rtmp/rtsp/device/hls/udp/rtp/srt), a goroutine calls `RefreshLivePlaylist` every 5s, rebuilding the playlist from ALL `.ts` files on disk without `#EXT-X-ENDLIST`
 - **Completion**: ffmpeg exits naturally → `FinalizePlaylist` → marks `completed`
+- **Filmstrip**: After job stop/pause/completion, a thumbnail sprite sheet is generated for timeline scrubbing
 
 ## Scheduled Recordings
 
@@ -334,21 +363,75 @@ Called on job stop/pause/completion. Scans all `.ts` files on disk, sorts by seg
 
 Called every 5 seconds by a background goroutine during live recording. Same as FinalizePlaylist but **without** `#EXT-X-ENDLIST`, keeping the playlist as a live HLS stream. Ensures the player can seek through the full archive during active recording. Uses the same atomic tmp-file + rename write strategy.
 
+**Performance optimizations:**
+- **Segment duration cache**: Uses a `sync.Map` keyed by `"path|modtime|size"` to avoid re-probing segments that haven't changed. Only used during live refresh.
+- **Playlist segment cap**: Limits playlist to **2160 segments** (~24h at 4s per segment) to prevent unbounded growth.
+
+### FinalizePlaylist discontinuity detection
+
+`FinalizePlaylist` (called on job stop/pause/completion) probes each segment's start PTS via `ProbeSegmentStartPTS`. It compares each segment's actual start PTS against the expected PTS (previous startPTS + duration). If the gap exceeds ±2 seconds, a `#EXT-X-DISCONTINUITY` tag is inserted before that segment, handling ad breaks, stream interruptions, or timestamp resets from remote CDN sources. This probe is only done during finalization (not during the 5s live refresh cycle) to keep the refresh fast.
+
 ### Stream response headers
 
 The HLS file server (`stream.go`) sets content-type and caching headers per extension:
 
 - `.m3u8` — `application/vnd.apple.mpegurl` with `Cache-Control: no-cache, no-store, must-revalidate`, `Pragma: no-cache`, `Expires: 0` so players always fetch a fresh playlist.
-- `.ts` — `video/mp2t` with `Cache-Control: public, max-age=3600` (segments are immutable once written).
-- `.jpg` — thumbnail poster image.
+- `.ts` — `video/mp2t` with `Cache-Control: public, max-age=5` (live) or `max-age=3600` (recorded). The live/recorded status is determined by scanning `playlist.m3u8` for `#EXT-X-ENDLIST`, cached for 5 seconds.
+- `.jpg` — `image/jpeg` with `Cache-Control: public, max-age=3600`.
+- `.vtt` — `text/vtt` with same live/recorded cache behavior as `.ts`.
+- `.json` — `application/json` with same live/recorded cache behavior as `.ts`.
 
 ### Video player HLS.js config
 
-- `liveDurationInfinity: false` — duration reflects total archive length
-- `lowLatencyMode: false` — allows seeking to older content
-- `backBufferLength: Infinity` — keeps all segments in memory
+**Live mode:**
+- `lowLatencyMode: false` — Standard HLS, no LL-HLS expectations
+- `liveDurationInfinity: true` — Duration reflects total archive length
+- `liveSyncDuration: 3` — Target 3 seconds behind live edge
+- `liveMaxLatencyDuration: 12` — Max 12 seconds behind live edge
+- `maxBufferLength: 30` — 30 seconds forward buffer
+- `maxMaxBufferLength: 120` — Up to 2 minutes buffered
+- `backBufferLength: 120` — 120 seconds of back buffer (capped to prevent memory accumulation)
+- `liveBackBufferLength: 120` — 120 seconds of live back buffer
+- `maxBufferSize: 30MB`
+
+**Recorded mode:**
+- `lowLatencyMode: false`
+- `liveDurationInfinity: false` — Standard duration
 - `maxBufferLength: 60` — 60 seconds forward buffer
-- `maxMaxBufferLength: 300` — up to 5 minutes buffered
+- `maxMaxBufferLength: 300` — Up to 5 minutes buffered
+- `backBufferLength: 60` — 60 seconds of back buffer
+- `liveBackBufferLength: 60` — 60 seconds of live back buffer
+- `maxBufferSize: 60MB`
+
+### HLS Error Recovery
+
+The player implements a three-tier error recovery:
+1. **Network error**: Retries loading via `hls.startLoad()`
+2. **Media error**: Recovers via `hls.recoverMediaError()`
+3. **Fatal/unrecoverable**: After 3 failed recovery attempts, destroys and re-creates the entire HLS instance, preserving playback position via `savedTimeRef`. All event handlers are re-registered on the new instance via `attachHlsEvents()`.
+
+## Filmstrip / Thumbnail Sprites
+
+vieo generates thumbnail sprite sheets for visual timeline scrubbing in the player.
+
+### Generation
+
+- Triggered after job stop/pause/completion, and retroactively on startup for outputs missing filmstrips
+- Uses `ffmpeg -ss START -t DURATION -i playlist.m3u8 -vf "fps=1/5,scale=160:90,tile=10x10" -frames:v 1 -q:v 65 sprite_NNN.jpg`
+- Falls back to segment-by-segment generation via concat demuxer if the primary method fails
+- Each sprite sheet is 10×10 grid of 160×90px thumbnails, covering 500 seconds (8.3 min) at 5s intervals
+
+### Files generated
+
+- `sprite_000.jpg`, `sprite_001.jpg`, ... — Sprite sheet images
+- `thumbs.json` — Metadata (interval, tile dimensions, grid size, tile list, timestamps)
+- `thumbs.vtt` — WebVTT file with sprite coordinates for each 5-second interval
+
+### Frontend integration
+
+- `VideoPlayer` fetches `/api/stream/{outputId}/thumbs.json` on mount (refetches every 30s for live)
+- Timeline hover shows a floating 160×90px thumbnail preview using CSS `backgroundPosition` on the sprite sheet
+- Date/time labels displayed alongside thumbnails
 
 ## Video Player Features
 
@@ -358,23 +441,48 @@ The custom `VideoPlayer` component provides:
 - **Volume**: Mute toggle + volume slider
 - **Fullscreen**: Browser fullscreen API
 - **Screenshots**: Canvas capture → PNG download
-- **Timeline thumbnails**: On hover, seeks hidden video element, draws frame to 160×90px floating thumbnail with time label
+- **Timeline thumbnails**: On hover, displays sprite sheet thumbnail with time label from filmstrip data
+- **Filmstrip seek bar**: Shows thumbnail strip in the timeline bar with date/time labels
 - **Auto-hide controls**: Controls fade after 3 seconds of inactivity
 - **LIVE badge**: Shown when streaming live content
-- **Date/time picker**: In Player page, allows jumping to specific points in archives
+- **Speed restriction**: Playback speed limited to ≤1x during live streams
+- **Live edge cap**: Seek bar limited to duration minus 3 seconds during live
+- **Date/time picker**: In Player page, allows jumping to specific points in archives (hidden during live)
+- **Position preservation**: Saved across HLS re-init (e.g., live-to-recorded transitions)
 
 ## Frontend Routes
 
 | Path | Component | Auth | Description |
 |------|-----------|------|-------------|
 | `/login` | `Login` | None | Login page |
-| `/player/:outputId` | `Player` | None | HLS player with seeking |
+| `/player/:outputId` | `Player` | None | HLS player with seeking + timeline events + export |
 | `/` | `Dashboard` | Protected | Running jobs, disk, storage overview |
 | `/channels` | `Channels` | Protected | Channel list + create/edit (public/private, admin-only actions) |
 | `/channels/:id` | `ChannelDetail` | Protected | Sources + transcode controls |
-| `/sources` | `Sources` | Protected (admin) | Source list + inline edit + schedules |
+| `/sources` | `Sources` | Protected (admin) | Source list + inline edit + schedules + copy URL |
 | `/jobs` | `Jobs` | Protected (admin) | Job list + logs + controls |
 | `/users` | `Users` | Protected (admin) | User management + password reset |
+
+## Database Schema
+
+### Tables (21 migrations)
+
+| Table | Purpose |
+|-------|---------|
+| `channels` | Channel definitions (name, slug, description, public flag) |
+| `sources` | Source configurations (type, URL, stream_type, metadata) |
+| `outputs` | Output directories (source_id, type, path, filmstrip_generated) |
+| `jobs` | Job records (source_id, output_id, status, progress, error_msg, pid) |
+| `job_logs` | Job log entries (job_id, level, message) |
+| `users` | User accounts (username, password_hash, role) |
+| `schedules` | Recording schedules (source_id, start_time, end_time, days_of_week) |
+| `timeline_events` | Player timeline markers (job_id, time_offset, label, color) |
+| `exports` | Export clips (source_id, output_id, status, progress, file_path) |
+
+### Indexes
+
+- `idx_sources_channel`, `idx_outputs_source`, `idx_jobs_source`, `idx_jobs_status`
+- `idx_job_logs_job`, `idx_schedules_source`, `idx_timeline_events_job`, `idx_exports_source`
 
 ## Testing Strategy
 
@@ -396,5 +504,5 @@ The custom `VideoPlayer` component provides:
 | `VIEO_DISK_CRIT` | `95` | Disk usage % to force stop |
 | `VIEO_MAX_JOBS` | `3` | Maximum concurrent transcoding jobs |
 | `VIEO_WATERMARK` | `true` | Enable watermark overlay on video streams |
-| `VIEO_JWT_SECRET` | auto-generated | HS256 signing key for JWT cookies (32-byte hex) |
+| `VIEO_JWT_SECRET` | auto-generated | HS256 signing key for JWT cookies (32-byte hex, persisted to `.jwt_secret`) |
 | `VIEO_AUTH_ENABLED` | `true` | Enable JWT auth; when false, all requests are unauthenticated |

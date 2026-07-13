@@ -184,7 +184,7 @@ export default function ChannelDetail() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            {isAdmin && !output && (
+                            {isAdmin && !isRunning && !isPaused && (
                               <Button
                                 size="sm"
                                 variant="outline"

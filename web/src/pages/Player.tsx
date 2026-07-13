@@ -12,7 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import { ArrowLeft, Radio, Activity, Clock, Calendar, Bookmark, Trash2, MapPin } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useWebSocket } from '@/hooks/use-websocket'
-import type { JobStatus, JobEvent } from '@/types'
+import type { JobEvent } from '@/types'
 
 const EVENT_COLORS = ['#3b82f6', '#22c55e', '#ef4444', '#eab308', '#a855f7']
 
@@ -32,7 +32,6 @@ export default function Player() {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const id = parseInt(outputId || '0')
-  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
 
   const [jumpDate, setJumpDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [jumpTime, setJumpTime] = useState(() => new Date().toTimeString().slice(0, 8))
@@ -73,12 +72,6 @@ export default function Player() {
   })
 
   useEffect(() => {
-    if (job) {
-      setJobStatus(job.status)
-    }
-  }, [job])
-
-  useEffect(() => {
     if (job?.created_at) {
       const d = new Date(job.created_at)
       setJumpDate(d.toISOString().slice(0, 10))
@@ -87,7 +80,7 @@ export default function Player() {
     }
   }, [job?.created_at])
 
-  const isLive = jobStatus === 'running'
+  const isLive = job?.status === 'running'
 
   const handleJump = useCallback(() => {
     if (!job?.created_at) return
@@ -139,8 +132,10 @@ export default function Player() {
   useWebSocket((event: JobEvent) => {
     if (event.type === 'job:update' && 'id' in event.payload) {
       const p = event.payload as { id: number; status?: string; progress?: number }
-      if (job && p.id === job.id && p.status) {
-        setJobStatus(p.status as JobStatus)
+      if (job && p.id === job.id && p.status && p.status !== job.status) {
+        queryClient.setQueryData(['jobs'], (old: any[]) =>
+          old?.map((j) => (j.id === job.id ? { ...j, status: p.status } : j))
+        )
       }
     }
   })
@@ -158,7 +153,7 @@ export default function Player() {
           <h1 className="text-base sm:text-lg font-semibold truncate">
             {job ? (job.source_id ? `Stream #${job.source_id}` : 'Stream') : 'Player'}
           </h1>
-          {jobStatus && <Badge variant={jobStatus}>{jobStatus}</Badge>}
+          {job?.status && <Badge variant={job.status}>{job.status}</Badge>}
         </div>
 
         {showJump && !isLive && (
@@ -188,12 +183,11 @@ export default function Player() {
         <div className="flex-1 p-2 sm:p-4 min-h-0">
           <VideoPlayer
             streamUrl={`/api/stream/${id}/playlist.m3u8`}
-            posterUrl={`/api/stream/${id}/thumb.jpg`}
             isLive={isLive}
             startTime={job?.created_at}
             events={events}
-            onExport={!isLive ? handleExport : undefined}
-            showExportButton={user?.role === 'admin' && !isLive}
+            onExport={handleExport}
+            showExportButton={user?.role === 'admin'}
             className="w-full h-full max-h-[calc(100vh-5rem)] sm:max-h-[calc(100vh-8rem)]"
           />
         </div>
@@ -211,7 +205,7 @@ export default function Player() {
               <div className="text-xs text-muted-foreground mb-1">Status</div>
               <div className="flex items-center gap-2">
                 <Activity className="h-4 w-4" />
-                <span className="text-sm capitalize">{jobStatus || 'unknown'}</span>
+                <span className="text-sm capitalize">{job?.status || 'unknown'}</span>
               </div>
             </CardContent>
           </Card>
@@ -257,7 +251,7 @@ export default function Player() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs text-muted-foreground">Events</div>
-                {user?.role === 'admin' && !isLive && (
+                {user?.role === 'admin' && (
                   <Button
                     variant="ghost"
                     size="sm"

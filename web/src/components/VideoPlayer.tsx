@@ -71,7 +71,35 @@ function formatDateTimeFull(startISO: string, offsetSec: number): string {
   return d.toLocaleString()
 }
 
-const SPEEDS = [0.5, 1, 1.5, 2]
+const ALL_SPEEDS = [0.5, 1, 1.5, 2]
+const LIVE_EDGE_BUFFER = 3
+
+function getHlsConfig(isLive: boolean) {
+  if (isLive) {
+    return {
+      enableWorker: true,
+      lowLatencyMode: false,
+      liveDurationInfinity: true,
+      liveSyncDuration: LIVE_EDGE_BUFFER,
+      liveMaxLatencyDuration: LIVE_EDGE_BUFFER * 4,
+      maxBufferLength: 30,
+      maxMaxBufferLength: 120,
+      backBufferLength: 120,
+      liveBackBufferLength: 120,
+      maxBufferSize: 30 * 1024 * 1024,
+    }
+  }
+  return {
+    enableWorker: true,
+    lowLatencyMode: false,
+    liveDurationInfinity: false,
+    maxBufferLength: 60,
+    maxMaxBufferLength: 300,
+    backBufferLength: 60,
+    liveBackBufferLength: 60,
+    maxBufferSize: 60 * 1024 * 1024,
+  }
+}
 
 export default function VideoPlayer({
   streamUrl,
@@ -89,6 +117,14 @@ export default function VideoPlayer({
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recoveryCountRef = useRef(0)
   const hlsRef = useRef<Hls | null>(null)
+  const savedTimeRef = useRef(0)
+  const isLiveRef = useRef(isLive)
+  const lastDurationUpdateRef = useRef(0)
+  const lastPublishedDurationRef = useRef(0)
+  const lastTimeUpdateRef = useRef(0)
+  const hoverThrottleRef = useRef(0)
+  const seekingRef = useRef(false)
+  const controlsVisibleRef = useRef(true)
 
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -115,17 +151,25 @@ export default function VideoPlayer({
   const [clipEnd, setClipEnd] = useState(0)
   const [draggingHandle, setDraggingHandle] = useState<'start' | 'end' | null>(null)
 
+  isLiveRef.current = isLive
+  seekingRef.current = seeking
+
+  const speeds = isLive ? ALL_SPEEDS.filter((s) => s <= 1) : ALL_SPEEDS
+
   const showControls = useCallback(() => {
-    setControlsVisible(true)
+    if (!controlsVisibleRef.current) {
+      controlsVisibleRef.current = true
+      setControlsVisible(true)
+    }
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
     hideTimerRef.current = setTimeout(() => {
       if (videoRef.current && !videoRef.current.paused) {
+        controlsVisibleRef.current = false
         setControlsVisible(false)
       }
     }, 3000)
   }, [])
 
-  // Load filmstrip metadata — reusable fetcher
   const fetchFilmstrip = useCallback(() => {
     const match = streamUrl.match(/\/api\/stream\/(\d+)\//)
     if (!match) return
@@ -136,17 +180,18 @@ export default function VideoPlayer({
         if (!r.ok) throw new Error('no filmstrip')
         return r.json()
       })
-      .then((meta: FilmstripMeta) => {
+      .then(async (meta: FilmstripMeta) => {
         setFilmstripMeta(meta)
         const images = new Map<string, HTMLImageElement>()
-        meta.tiles.forEach((tile) => {
-          const img = new Image()
-          img.src = `/api/stream/${outputId}/${tile.file}`
-          img.onload = () => {
-            images.set(tile.file, img)
-            setFilmstripImages(new Map(images))
-          }
-        })
+        await Promise.all(meta.tiles.map((tile) =>
+          new Promise<void>((resolve) => {
+            const img = new Image()
+            img.onload = () => { images.set(tile.file, img); resolve() }
+            img.onerror = () => resolve()
+            img.src = `/api/stream/${outputId}/${tile.file}`
+          })
+        ))
+        setFilmstripImages(new Map(images))
       })
       .catch(() => {})
   }, [streamUrl])
@@ -155,7 +200,6 @@ export default function VideoPlayer({
     fetchFilmstrip()
   }, [fetchFilmstrip])
 
-  // Periodic refresh for live recordings
   useEffect(() => {
     if (!isLive) return
     const interval = setInterval(() => {
@@ -164,54 +208,71 @@ export default function VideoPlayer({
     return () => clearInterval(interval)
   }, [isLive, fetchFilmstrip])
 
-  // HLS setup
+  // HLS setup — saves/restores position across re-init
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
+    const videoEl = video
+
+    // Save position before tearing down (for live→recorded transition)
+    if (hlsRef.current && video.currentTime > 0) {
+      savedTimeRef.current = video.currentTime
+    }
 
     let hls: Hls | null = null
     let durationInterval: ReturnType<typeof setInterval> | null = null
     recoveryCountRef.current = 0
+    lastDurationUpdateRef.current = 0
     setSubtitleTracks([])
     setActiveSubtitle(-1)
 
-    if (Hls.isSupported()) {
-      hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: false,
-        liveDurationInfinity: false,
-        maxBufferLength: 60,
-        maxMaxBufferLength: 300,
-        backBufferLength: 60,
-        liveBackBufferLength: Infinity,
-        maxBufferSize: 60 * 1024 * 1024,
-      })
-      hlsRef.current = hls
-      hls.loadSource(streamUrl)
-      hls.attachMedia(video)
+    function attachHlsEvents(instance: Hls) {
+      instance.on(Hls.Events.MANIFEST_PARSED, () => {
+        const restoreTime = savedTimeRef.current
+        if (restoreTime > 0) {
+          videoEl.currentTime = restoreTime
+          savedTimeRef.current = 0
+        }
 
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setDuration(video.duration)
+        const dur = videoEl.duration
+        if (isFinite(dur)) {
+          setDuration(dur)
+          lastPublishedDurationRef.current = dur
+        }
+
         if (isLive) {
+          lastDurationUpdateRef.current = Date.now()
+          if (durationInterval) clearInterval(durationInterval)
           durationInterval = setInterval(() => {
-            if (video.duration && isFinite(video.duration)) {
-              setDuration(video.duration)
+            if (!videoEl.duration || !isFinite(videoEl.duration)) return
+            const now = Date.now()
+            const elapsed = now - lastDurationUpdateRef.current
+            const newDur = videoEl.duration
+            // Only push duration update if it changed by >5s or 15s elapsed
+            if (Math.abs(newDur - lastPublishedDurationRef.current) > 5 || elapsed > 15000) {
+              setDuration(newDur)
+              lastPublishedDurationRef.current = newDur
+              lastDurationUpdateRef.current = now
             }
-          }, 10000)
+          }, 3000)
+        } else {
+          if (isFinite(dur)) {
+            setDuration(dur)
+          }
         }
       })
 
-      hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (_event, data) => {
+      instance.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (_event, data) => {
         const tracks = data.subtitleTracks.map((t) => ({ id: t.id, name: t.name }))
         setSubtitleTracks(tracks)
-        setActiveSubtitle(hls!.subtitleTrack)
+        setActiveSubtitle(instance.subtitleTrack)
       })
 
-      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+      instance.on(Hls.Events.FRAG_BUFFERED, () => {
         recoveryCountRef.current = 0
       })
 
-      hls.on(Hls.Events.ERROR, (_event, data) => {
+      instance.on(Hls.Events.ERROR, (_event, data) => {
         if (!hls) return
         if (data.fatal) {
           switch (data.type) {
@@ -224,32 +285,38 @@ export default function VideoPlayer({
             default:
               recoveryCountRef.current++
               if (recoveryCountRef.current >= 3) {
+                savedTimeRef.current = videoEl.currentTime
                 hls.destroy()
-                hls = new Hls({
-                  enableWorker: true,
-                  lowLatencyMode: false,
-                  liveDurationInfinity: false,
-                  maxBufferLength: 60,
-                  maxMaxBufferLength: 300,
-                  backBufferLength: 60,
-                  liveBackBufferLength: Infinity,
-                  maxBufferSize: 60 * 1024 * 1024,
-                })
-                hlsRef.current = hls
-                hls.loadSource(streamUrl)
-                hls.attachMedia(video)
+                const newHls = new Hls(getHlsConfig(!!isLiveRef.current))
+                hlsRef.current = newHls
+                hls = newHls
+                newHls.loadSource(streamUrl)
+                newHls.attachMedia(videoEl)
+                attachHlsEvents(newHls)
                 recoveryCountRef.current = 0
               }
               break
           }
         }
       })
+    }
+
+    if (Hls.isSupported()) {
+      const config = getHlsConfig(!!isLive)
+      hls = new Hls(config)
+      hlsRef.current = hls
+      hls.loadSource(streamUrl)
+      hls.attachMedia(video)
+      attachHlsEvents(hls)
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = streamUrl
     }
 
     return () => {
       if (durationInterval) clearInterval(durationInterval)
+      if (video.currentTime > 0) {
+        savedTimeRef.current = video.currentTime
+      }
       const current = hlsRef.current
       hlsRef.current = null
       current?.destroy()
@@ -263,11 +330,14 @@ export default function VideoPlayer({
     const onPlay = () => setPlaying(true)
     const onPause = () => setPlaying(false)
     const onTimeUpdate = () => {
-      if (!seeking) {
-        setCurrentTime(video.currentTime)
+      if (!seekingRef.current) {
+        const now = performance.now()
+        if (now - lastTimeUpdateRef.current >= 100) {
+          lastTimeUpdateRef.current = now
+          setCurrentTime(video.currentTime)
+        }
       }
     }
-    const onDurationChange = () => setDuration(video.duration)
     const onEnded = () => setPlaying(false)
     const onVolumeChange = () => {
       setVolume(video.volume)
@@ -277,7 +347,6 @@ export default function VideoPlayer({
     video.addEventListener('play', onPlay)
     video.addEventListener('pause', onPause)
     video.addEventListener('timeupdate', onTimeUpdate)
-    video.addEventListener('durationchange', onDurationChange)
     video.addEventListener('ended', onEnded)
     video.addEventListener('volumechange', onVolumeChange)
 
@@ -285,11 +354,10 @@ export default function VideoPlayer({
       video.removeEventListener('play', onPlay)
       video.removeEventListener('pause', onPause)
       video.removeEventListener('timeupdate', onTimeUpdate)
-      video.removeEventListener('durationchange', onDurationChange)
       video.removeEventListener('ended', onEnded)
       video.removeEventListener('volumechange', onVolumeChange)
     }
-  }, [seeking])
+  }, [])
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -306,6 +374,7 @@ export default function VideoPlayer({
     const onMouseLeave = () => {
       setThumbVisible(false)
       if (videoRef.current && !videoRef.current.paused) {
+        controlsVisibleRef.current = false
         setControlsVisible(false)
       }
     }
@@ -344,8 +413,8 @@ export default function VideoPlayer({
   function cycleSpeed() {
     const video = videoRef.current
     if (!video) return
-    const idx = SPEEDS.indexOf(speed)
-    const next = SPEEDS[(idx + 1) % SPEEDS.length]
+    const idx = speeds.indexOf(speed)
+    const next = speeds[(idx + 1) % speeds.length]
     video.playbackRate = next
     setSpeed(next)
   }
@@ -364,7 +433,7 @@ export default function VideoPlayer({
     } else {
       setClipMode(true)
       setClipStart(Math.max(0, currentTime - 30))
-      setClipEnd(Math.min(duration, currentTime + 30))
+      setClipEnd(Math.min(seekMax, currentTime + 30))
     }
   }
 
@@ -412,8 +481,13 @@ export default function VideoPlayer({
   function handleSeekEnd(value: number[]) {
     const video = videoRef.current
     if (!video) return
-    video.currentTime = value[0]
-    setCurrentTime(value[0])
+    let target = value[0]
+    // Cap at live edge during live playback
+    if (isLive && duration > 0) {
+      target = Math.min(target, duration - LIVE_EDGE_BUFFER)
+    }
+    video.currentTime = Math.max(0, target)
+    setCurrentTime(target)
     setSeeking(false)
   }
 
@@ -448,7 +522,7 @@ export default function VideoPlayer({
   }
 
   function getFilmstripFrame(timeSec: number): { src: string; x: number; y: number; w: number; h: number } | null {
-    if (!filmstripMeta || filmstripMeta.tiles.length === 0) return null
+    if (!filmstripMeta || !filmstripMeta.tiles || filmstripMeta.tiles.length === 0) return null
 
     const frameIdx = Math.floor(timeSec / filmstripMeta.interval)
     const tilesPerSheet = filmstripMeta.gridCols * filmstripMeta.gridRows
@@ -471,6 +545,10 @@ export default function VideoPlayer({
   }
 
   function handleTimelineHover(e: React.MouseEvent) {
+    const now = performance.now()
+    if (now - hoverThrottleRef.current < 50) return
+    hoverThrottleRef.current = now
+
     const timeline = timelineRef.current
     if (!timeline) return
 
@@ -489,30 +567,29 @@ export default function VideoPlayer({
   }
 
   const seekProgress = seeking ? seekValue[0] : currentTime
+  const seekMax = isLive && duration > LIVE_EDGE_BUFFER ? duration - LIVE_EDGE_BUFFER : duration
 
-  // Date/time labels along the seek bar
   const timeLabels = useMemo(() => {
-    if (!startTime || duration <= 0) return []
+    if (!startTime || seekMax <= 0) return []
     const labels: { time: number; dateStr: string; pct: number }[] = []
-    const interval = duration <= 300 ? 30 : duration <= 3600 ? 60 : duration <= 86400 ? 300 : 3600
-    for (let t = 0; t < duration; t += interval) {
+    const interval = seekMax <= 300 ? 30 : seekMax <= 3600 ? 60 : seekMax <= 86400 ? 300 : 3600
+    for (let t = 0; t < seekMax; t += interval) {
       labels.push({
         time: t,
         dateStr: formatDateTime(startTime, t),
-        pct: (t / duration) * 100,
+        pct: (t / seekMax) * 100,
       })
     }
     return labels
-  }, [startTime, duration])
+  }, [startTime, seekMax])
 
   const thumbFrame = thumbVisible && duration > 0 ? getFilmstripFrame(thumbTime) : null
   const thumbImage = thumbFrame ? filmstripImages.get(thumbFrame.src) : null
 
-  // Pre-compute filmstrip tile positions for the persistent strip (thinned for long videos)
   const filmstripTiles = useMemo(() => {
-    if (!filmstripMeta || filmstripMeta.tiles.length === 0 || duration <= 0) return []
+    if (!filmstripMeta || !filmstripMeta.tiles || filmstripMeta.tiles.length === 0 || seekMax <= 0) return []
     const tilesPerSheet = filmstripMeta.gridCols * filmstripMeta.gridRows
-    const rawCount = Math.floor(duration / filmstripMeta.interval)
+    const rawCount = Math.floor(seekMax / filmstripMeta.interval)
     const targetTiles = 30
     const skipFactor = Math.max(1, Math.floor(rawCount / targetTiles))
     const result: { file: string; leftPct: number; widthPct: number; bgX: number; bgY: number; bgW: number; bgH: number }[] = []
@@ -524,8 +601,8 @@ export default function VideoPlayer({
         const row = Math.floor(i / filmstripMeta.gridCols)
         result.push({
           file: sheet.file,
-          leftPct: (globalIdx * filmstripMeta.interval / duration) * 100,
-          widthPct: (skipFactor * filmstripMeta.interval / duration) * 100,
+          leftPct: (globalIdx * filmstripMeta.interval / seekMax) * 100,
+          widthPct: (skipFactor * filmstripMeta.interval / seekMax) * 100,
           bgX: col * filmstripMeta.tileWidth,
           bgY: row * filmstripMeta.tileHeight,
           bgW: filmstripMeta.gridCols * filmstripMeta.tileWidth,
@@ -534,7 +611,7 @@ export default function VideoPlayer({
       }
     }
     return result
-  }, [filmstripMeta, duration])
+  }, [filmstripMeta, seekMax])
 
   return (
     <div
@@ -682,14 +759,14 @@ export default function VideoPlayer({
                 </div>
               )}
               {/* Event markers */}
-              {events.length > 0 && duration > 0 && (
+              {events.length > 0 && seekMax > 0 && (
                 <div className="absolute inset-x-0 top-0 h-2 pointer-events-none z-10">
                   {events.map((ev) => (
                     <div
                       key={ev.id}
                       className="absolute top-0 w-1.5 h-1.5 rounded-full -translate-x-0.5"
                       style={{
-                        left: `${(ev.time_offset / duration) * 100}%`,
+                        left: `${(ev.time_offset / seekMax) * 100}%`,
                         backgroundColor: ev.color,
                       }}
                       title={`${formatTime(ev.time_offset)} — ${ev.label}`}
@@ -698,30 +775,30 @@ export default function VideoPlayer({
                 </div>
               )}
               {/* Clip selection overlay */}
-              {clipMode && duration > 0 && (
+              {clipMode && seekMax > 0 && (
                 <div className="absolute inset-x-0 top-0 h-4 pointer-events-none z-10">
                   <div
                     className="absolute top-0 h-full bg-blue-500/30 border-y border-blue-500/60"
                     style={{
-                      left: `${(clipStart / duration) * 100}%`,
-                      width: `${((clipEnd - clipStart) / duration) * 100}%`,
+                      left: `${(clipStart / seekMax) * 100}%`,
+                      width: `${((clipEnd - clipStart) / seekMax) * 100}%`,
                     }}
                   />
                   <div
                     className="absolute top-0 h-full w-1 bg-blue-500 cursor-ew-resize pointer-events-auto"
-                    style={{ left: `${(clipStart / duration) * 100}%`, transform: 'translateX(-50%)' }}
+                    style={{ left: `${(clipStart / seekMax) * 100}%`, transform: 'translateX(-50%)' }}
                     onMouseDown={(e) => handleClipMouseDown('start', e)}
                   />
                   <div
                     className="absolute top-0 h-full w-1 bg-blue-500 cursor-ew-resize pointer-events-auto"
-                    style={{ left: `${(clipEnd / duration) * 100}%`, transform: 'translateX(-50%)' }}
+                    style={{ left: `${(clipEnd / seekMax) * 100}%`, transform: 'translateX(-50%)' }}
                     onMouseDown={(e) => handleClipMouseDown('end', e)}
                   />
                 </div>
               )}
               <Slider
                 value={[seekProgress]}
-                max={duration || 100}
+                max={seekMax || 100}
                 step={0.1}
                 onValueChange={handleSeekChange}
                 onPointerDown={handleSeekStart}
@@ -735,7 +812,7 @@ export default function VideoPlayer({
               />
             </div>
             <span className="text-white/60 text-xs font-mono tabular-nums w-16 shrink-0">
-              {formatTime(duration)}
+              {isLive ? `-${formatTime(Math.max(0, duration - currentTime))}` : formatTime(duration)}
             </span>
           </div>
           {/* Clip mode info bar */}
@@ -765,8 +842,12 @@ export default function VideoPlayer({
 
             <button
               onClick={(e) => { e.stopPropagation(); cycleSpeed() }}
-              className="px-2 py-1 rounded-md text-white text-xs font-medium hover:bg-white/20 transition-colors min-w-[40px] flex items-center justify-center gap-1"
+              className={cn(
+                'px-2 py-1 rounded-md text-xs font-medium transition-colors min-w-[40px] flex items-center justify-center gap-1',
+                isLive && speed === 1 ? 'text-white/40 cursor-default' : 'text-white hover:bg-white/20',
+              )}
               aria-label={`Playback speed ${speed}x`}
+              disabled={isLive && speed === 1 && speeds.length <= 1}
             >
               <Gauge className="h-3 w-3" />
               {speed}x
@@ -808,7 +889,7 @@ export default function VideoPlayer({
               </DropdownMenu>
             )}
 
-            {showExportButton && !isLive && duration > 0 && (
+            {showExportButton && duration > 0 && (
               <button
                 onClick={(e) => { e.stopPropagation(); toggleClipMode() }}
                 className={cn(

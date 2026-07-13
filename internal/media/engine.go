@@ -27,7 +27,7 @@ type TranscodeConfig struct {
 }
 
 func Transcode(ctx context.Context, cfg TranscodeConfig, onProgress ProgressFn) error {
-	playlist := fmt.Sprintf("%s/playlist.m3u8", cfg.OutputDir)
+	playlist := fmt.Sprintf("%s/ffmpeg.m3u8", cfg.OutputDir)
 	segmentPattern := fmt.Sprintf("%s/seg_%%05d.ts", cfg.OutputDir)
 
 	args := buildInputArgs(cfg)
@@ -112,6 +112,8 @@ func buildInputArgs(cfg TranscodeConfig) []string {
 		if cfg.FrameRate != "" {
 			args = append(args, "-framerate", cfg.FrameRate)
 		}
+	case "hls":
+		args = append(args, "-re", "-rw_timeout", "5000000")
 	case "udp":
 		args = append(args, "-fflags", "nobuffer+discardcorrupt")
 	case "rtp":

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/arthur/vieo/internal/config"
 	"github.com/arthur/vieo/internal/db"
@@ -48,6 +49,8 @@ func main() {
 		log.Printf("resume jobs: %v", err)
 	}
 
+	go generateMissingFilmstrips(ctx, database.DB, cfg.DataDir)
+
 	watcher := job.NewDiskWatcher(cfg.DataDir, cfg.DiskWarn, cfg.DiskCrit, mgr)
 	go watcher.Start(ctx)
 
@@ -85,4 +88,46 @@ func seedAdminUser(ctx context.Context, database *sql.DB) {
 		return
 	}
 	log.Printf("created default admin user (username: admin, password: admin)")
+}
+
+func generateMissingFilmstrips(ctx context.Context, database *sql.DB, dataDir string) {
+	outputs, err := models.ListOutputsWithoutFilmstrip(ctx, database)
+	if err != nil {
+		log.Printf("list outputs without filmstrip: %v", err)
+		return
+	}
+	if len(outputs) == 0 {
+		return
+	}
+
+	log.Printf("generating filmstrips for %d existing outputs...", len(outputs))
+	for _, o := range outputs {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		outputDir := media.OutputDir(dataDir, o.ID)
+		createdAtTime, _ := parseCreatedAt(o.CreatedAt)
+
+		filmstripCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		if err := media.GenerateFilmstrip(filmstripCtx, outputDir, createdAtTime, 0); err != nil {
+			log.Printf("retroactive filmstrip output %d: %v", o.ID, err)
+			cancel()
+			continue
+		}
+		cancel()
+
+		_ = models.MarkFilmstripGenerated(ctx, database, o.ID)
+		log.Printf("retroactive filmstrip generated for output %d", o.ID)
+	}
+	log.Printf("retroactive filmstrip generation complete")
+}
+
+func parseCreatedAt(s string) (time.Time, error) {
+	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, s)
 }

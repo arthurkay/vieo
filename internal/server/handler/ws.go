@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/arthur/vieo/internal/job"
 	"nhooyr.io/websocket"
@@ -67,14 +68,32 @@ func WebSocket(db *sql.DB, mgr *job.Manager) http.HandlerFunc {
 		hub.clients[conn] = struct{}{}
 		hub.mu.Unlock()
 
+		ctx := r.Context()
+
+		// Heartbeat: ping every 30s to keep connection alive through proxies
+		pingCtx, cancelPing := context.WithCancel(ctx)
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-pingCtx.Done():
+					return
+				case <-ticker.C:
+					if err := conn.Ping(pingCtx); err != nil {
+						return
+					}
+				}
+			}
+		}()
+
 		defer func() {
+			cancelPing()
 			hub.mu.Lock()
 			delete(hub.clients, conn)
 			hub.mu.Unlock()
 			conn.Close(websocket.StatusNormalClosure, "bye")
 		}()
-
-		ctx := r.Context()
 
 		for {
 			_, _, err := conn.Read(ctx)

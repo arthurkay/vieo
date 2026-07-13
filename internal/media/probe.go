@@ -371,13 +371,16 @@ func parseFrameRate(r string) string {
 }
 
 func ProbeSegmentDuration(ctx context.Context, segmentPath string) (float64, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
 	args := []string{
 		"-v", "quiet",
 		"-print_format", "json",
 		"-show_entries", "format=duration",
 		segmentPath,
 	}
-	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	cmd := exec.CommandContext(probeCtx, "ffprobe", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return 0, fmt.Errorf("ffprobe segment: %w: %s", err, strings.TrimSpace(string(out)))
@@ -397,4 +400,54 @@ func ProbeSegmentDuration(ctx context.Context, segmentPath string) (float64, err
 		return 4.0, nil // fallback to default
 	}
 	return dur, nil
+}
+
+func ProbeSegmentStartPTS(ctx context.Context, segmentPath string) (float64, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	args := []string{
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_entries", "stream=start_time",
+		segmentPath,
+	}
+	cmd := exec.CommandContext(probeCtx, "ffprobe", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("ffprobe start_pts: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	var parsed struct {
+		Streams []struct {
+			StartTime string `json:"start_time"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		return 0, fmt.Errorf("parse ffprobe start_pts: %w", err)
+	}
+
+	for _, s := range parsed.Streams {
+		if s.StartTime != "" {
+			pts, err := strconv.ParseFloat(s.StartTime, 64)
+			if err == nil {
+				return pts, nil
+			}
+		}
+	}
+
+	// Fallback: try format-level start_time
+	var fmtParsed struct {
+		Format struct {
+			StartTime string `json:"start_time"`
+		} `json:"format"`
+	}
+	if err := json.Unmarshal(out, &fmtParsed); err == nil && fmtParsed.Format.StartTime != "" {
+		pts, err := strconv.ParseFloat(fmtParsed.Format.StartTime, 64)
+		if err == nil {
+			return pts, nil
+		}
+	}
+
+	return 0, nil
 }

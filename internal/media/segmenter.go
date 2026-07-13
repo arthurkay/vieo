@@ -10,8 +10,38 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+var playlistMu sync.Map
+
+func PlaylistDuration(dir string) float64 {
+	playlistPath := filepath.Join(dir, "playlist.m3u8")
+	data, err := os.ReadFile(playlistPath)
+	if err != nil {
+		return 0
+	}
+	var total float64
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "#EXTINF:") {
+			continue
+		}
+		val := strings.TrimPrefix(line, "#EXTINF:")
+		if idx := strings.Index(val, ","); idx >= 0 {
+			val = val[:idx]
+		}
+		dur, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+		if err == nil {
+			total += dur
+		}
+	}
+	return total
+}
+
+// segmentDurationCache caches ffprobe results keyed by "path|modtime|size".
+var segmentDurationCache sync.Map
 
 func EnsureOutputDir(dir string) error {
 	return os.MkdirAll(dir, 0755)
@@ -102,6 +132,11 @@ func CleanOutputDir(dir string) error {
 
 var segRe = regexp.MustCompile(`seg_(\d+)\.ts`)
 
+func getPlaylistMu(dir string) *sync.Mutex {
+	val, _ := playlistMu.LoadOrStore(dir, &sync.Mutex{})
+	return val.(*sync.Mutex)
+}
+
 func LastSegmentNumber(dir string) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -131,6 +166,10 @@ func LastSegmentNumber(dir string) (int, error) {
 }
 
 func FinalizePlaylist(ctx context.Context, dir string) error {
+	mu := getPlaylistMu(dir)
+	mu.Lock()
+	defer mu.Unlock()
+
 	segments, err := ListSegments(dir)
 	if err != nil {
 		return fmt.Errorf("list segments: %w", err)
@@ -143,6 +182,7 @@ func FinalizePlaylist(ctx context.Context, dir string) error {
 		name     string
 		num      int
 		duration float64
+		startPTS float64
 	}
 	var parsed []seg
 	for _, name := range segments {
@@ -155,7 +195,8 @@ func FinalizePlaylist(ctx context.Context, dir string) error {
 		if dur <= 0 {
 			dur = 4.0
 		}
-		parsed = append(parsed, seg{name: name, num: n, duration: dur})
+		pts, _ := ProbeSegmentStartPTS(ctx, filepath.Join(dir, name))
+		parsed = append(parsed, seg{name: name, num: n, duration: dur, startPTS: pts})
 	}
 	if len(parsed) == 0 {
 		return fmt.Errorf("no valid segments in %s", dir)
@@ -182,7 +223,17 @@ func FinalizePlaylist(ctx context.Context, dir string) error {
 	lines = append(lines, fmt.Sprintf("#EXT-X-TARGETDURATION:%d", targetDuration))
 	lines = append(lines, fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", parsed[0].num))
 
-	for _, s := range parsed {
+	for i, s := range parsed {
+		if i > 0 {
+			prev := parsed[i-1]
+			expectedPTS := prev.startPTS + prev.duration
+			if s.startPTS > 0 && expectedPTS > 0 {
+				ptsGap := s.startPTS - expectedPTS
+				if ptsGap > 2.0 || ptsGap < -2.0 {
+					lines = append(lines, "#EXT-X-DISCONTINUITY")
+				}
+			}
+		}
 		lines = append(lines, fmt.Sprintf("#EXTINF:%.6f,", s.duration))
 		lines = append(lines, s.name)
 	}
@@ -211,6 +262,10 @@ func PrepareResume(dir string) (int, error) {
 }
 
 func RefreshLivePlaylist(ctx context.Context, dir string) error {
+	mu := getPlaylistMu(dir)
+	mu.Lock()
+	defer mu.Unlock()
+
 	segments, err := ListSegments(dir)
 	if err != nil {
 		return fmt.Errorf("list segments: %w", err)
@@ -220,7 +275,7 @@ func RefreshLivePlaylist(ctx context.Context, dir string) error {
 	}
 
 	now := time.Now()
-	minAge := 3 * time.Second // segment must be at least 3s old to be complete
+	minAge := 3 * time.Second
 
 	type seg struct {
 		name     string
@@ -235,16 +290,21 @@ func RefreshLivePlaylist(ctx context.Context, dir string) error {
 		}
 		n, _ := strconv.Atoi(m[1])
 
-		// Guard: skip segments that are too small or still being written
 		segPath := filepath.Join(dir, name)
 		info, statErr := os.Stat(segPath)
 		if statErr != nil {
 			continue
 		}
-		if info.Size() < 10240 { // less than 10KB — likely incomplete
+		if info.Size() < 10240 {
 			continue
 		}
-		if now.Sub(info.ModTime()) < minAge { // still being written by ffmpeg
+		if now.Sub(info.ModTime()) < minAge {
+			continue
+		}
+
+		cacheKey := fmt.Sprintf("%s|%d|%d", segPath, info.ModTime().UnixNano(), info.Size())
+		if cached, ok := segmentDurationCache.Load(cacheKey); ok {
+			parsed = append(parsed, cached.(seg))
 			continue
 		}
 
@@ -252,7 +312,9 @@ func RefreshLivePlaylist(ctx context.Context, dir string) error {
 		if dur <= 0 {
 			dur = 4.0
 		}
-		parsed = append(parsed, seg{name: name, num: n, duration: dur})
+		cachedSeg := seg{name: name, num: n, duration: dur}
+		segmentDurationCache.Store(cacheKey, cachedSeg)
+		parsed = append(parsed, cachedSeg)
 	}
 	if len(parsed) == 0 {
 		return nil
@@ -261,6 +323,12 @@ func RefreshLivePlaylist(ctx context.Context, dir string) error {
 	sort.Slice(parsed, func(i, j int) bool {
 		return parsed[i].num < parsed[j].num
 	})
+
+	// Cap at ~24h of segments to prevent unbounded playlist growth
+	const maxPlaylistSegments = 2160
+	if len(parsed) > maxPlaylistSegments {
+		parsed = parsed[len(parsed)-maxPlaylistSegments:]
+	}
 
 	var maxDur float64
 	for _, s := range parsed {

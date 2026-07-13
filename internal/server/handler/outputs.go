@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/arthur/vieo/internal/db/models"
@@ -43,11 +44,17 @@ func CreateOutput(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-func DeleteOutput(db *sql.DB) http.HandlerFunc {
+func DeleteOutput(db *sql.DB, dataDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
 			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		dir := media.OutputDir(dataDir, id)
+		if err := os.RemoveAll(dir); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -74,6 +81,8 @@ func GetOutputStorage(db *sql.DB, dataDir string) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, map[string]int64{"bytes": size})
+		duration := media.PlaylistDuration(dir)
+
+		writeJSON(w, map[string]interface{}{"bytes": size, "duration": duration})
 	}
 }

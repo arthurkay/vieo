@@ -47,7 +47,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/", handler.ListOutputs(s.DB))
 			r.Post("/", handler.CreateOutput(s.DB))
 			r.Get("/{id}/storage", handler.GetOutputStorage(s.DB, s.Config.DataDir))
-			r.Delete("/{id}", handler.DeleteOutput(s.DB))
+			r.Delete("/{id}", handler.DeleteOutput(s.DB, s.Config.DataDir))
 		})
 
 		r.Route("/api/jobs", func(r chi.Router) {

@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { Plus, MoreHorizontal, Trash2, HardDrive, Calendar, ChevronDown, ChevronRight, Clock, Pencil, Check, X } from 'lucide-react'
+import { Plus, MoreHorizontal, Trash2, HardDrive, Calendar, ChevronDown, ChevronRight, Clock, Pencil, Check, X, Copy } from 'lucide-react'
 import type { Source, Output, Schedule } from '@/types'
 
 function formatBytes(bytes: number): string {
@@ -19,6 +19,15 @@ function formatBytes(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return ''
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
 }
 
 function SourceStorage({ sourceId, outputs }: { sourceId: number; outputs: Output[] | undefined }) {
@@ -48,7 +57,37 @@ function StorageBadge({ outputId }: { outputId: number }) {
     <span className="text-xs text-muted-foreground flex items-center gap-1">
       <HardDrive className="h-3 w-3" />
       {formatBytes(data.bytes)}
+      {data.duration > 0 && (
+        <>
+          <span className="mx-0.5">&middot;</span>
+          {formatDuration(data.duration)}
+        </>
+      )}
     </span>
+  )
+}
+
+function SourceOutputs({ sourceId, outputs, onDelete }: { sourceId: number; outputs: Output[] | undefined; onDelete: (id: number) => void }) {
+  const sourceOutputs = outputs?.filter(o => o.source_id === sourceId) || []
+  if (sourceOutputs.length === 0) return <span className="text-xs text-muted-foreground">No outputs</span>
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {sourceOutputs.map(output => (
+        <div key={output.id} className="flex items-center gap-2 rounded-md border bg-background px-2.5 py-1.5 text-sm">
+          <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="font-mono text-xs">{output.type || 'hls'}</span>
+          <StorageBadge outputId={output.id} />
+          <button
+            className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
+            title="Delete output files"
+            onClick={(e) => { e.stopPropagation(); onDelete(output.id) }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -307,6 +346,7 @@ export default function Sources() {
   const [watermarkText, setWatermarkText] = useState('LIVE')
   const [watermarkPosition, setWatermarkPosition] = useState<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'>('top-left')
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [deleteOutputId, setDeleteOutputId] = useState<number | null>(null)
   const [expandedSource, setExpandedSource] = useState<number | null>(null)
 
   const { data: sources, isLoading } = useQuery({ queryKey: ['sources'], queryFn: () => api.sources.list() })
@@ -335,6 +375,15 @@ export default function Sources() {
     mutationFn: (id: number) => api.sources.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources'] }),
     onError: (err: Error) => alert(`Delete failed: ${err.message}`),
+  })
+
+  const deleteOutputMutation = useMutation({
+    mutationFn: (id: number) => api.outputs.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['outputs'] })
+      setDeleteOutputId(null)
+    },
+    onError: (err: Error) => alert(`Delete output failed: ${err.message}`),
   })
 
   function handleSubmit(e: React.FormEvent) {
@@ -507,7 +556,7 @@ export default function Sources() {
                     const isExpanded = expandedSource === source.id
                     return (
                       <Fragment key={source.id}>
-                        <TableRow key={source.id} className="cursor-pointer" onClick={() => setExpandedSource(isExpanded ? null : source.id)}>
+                        <TableRow key={source.id} className="cursor-pointer group" onClick={() => setExpandedSource(isExpanded ? null : source.id)}>
                           <TableCell>
                             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                           </TableCell>
@@ -516,7 +565,21 @@ export default function Sources() {
                           <TableCell>{ch?.name || `Channel #${source.channel_id}`}</TableCell>
                           <TableCell className="capitalize">{source.type}</TableCell>
                           <TableCell className="text-muted-foreground">{(source.stream_type as string).split('_').join(' + ')}</TableCell>
-                          <TableCell className="font-mono text-xs text-muted-foreground max-w-[300px] truncate" title={source.url}>{source.url}</TableCell>
+                          <TableCell className="font-mono text-xs text-muted-foreground max-w-[300px]">
+                            <div className="flex items-center gap-1">
+                              <span className="truncate" title={source.url}>{source.url}</span>
+                              <button
+                                className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded hover:bg-muted transition-opacity"
+                                title="Copy URL"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(source.url)
+                                }}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </TableCell>
                           <TableCell>
                             <SourceStorage sourceId={source.id} outputs={outputs} />
                           </TableCell>
@@ -540,13 +603,22 @@ export default function Sources() {
                           </TableCell>
                         </TableRow>
                         {isExpanded && (
-                          <TableRow key={`${source.id}-schedules`}>
-                            <TableCell colSpan={9} className="p-3 bg-muted/20">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Calendar className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm font-medium">Schedules</span>
+                          <TableRow key={`${source.id}-expanded`}>
+                            <TableCell colSpan={9} className="p-3 bg-muted/20 space-y-3">
+                              <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <HardDrive className="h-4 w-4 text-muted-foreground" />
+                                  <span className="text-sm font-medium">Outputs</span>
+                                </div>
+                                <SourceOutputs sourceId={source.id} outputs={outputs} onDelete={setDeleteOutputId} />
                               </div>
-                              <SourceSchedules sourceId={source.id} />
+                              <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                                  <span className="text-sm font-medium">Schedules</span>
+                                </div>
+                                <SourceSchedules sourceId={source.id} />
+                              </div>
                             </TableCell>
                           </TableRow>
                         )}
@@ -573,6 +645,16 @@ export default function Sources() {
         variant="destructive"
         onConfirm={() => { if (deleteId) deleteMutation.mutate(deleteId); setDeleteId(null) }}
         loading={deleteMutation.isPending}
+      />
+      <ConfirmDialog
+        open={deleteOutputId !== null}
+        onOpenChange={(open) => { if (!open) setDeleteOutputId(null) }}
+        title="Delete Output Files"
+        description="Are you sure you want to delete this output's files from disk? This action cannot be undone."
+        confirmLabel="Delete Files"
+        variant="destructive"
+        onConfirm={() => { if (deleteOutputId) deleteOutputMutation.mutate(deleteOutputId) }}
+        loading={deleteOutputMutation.isPending}
       />
     </div>
   )

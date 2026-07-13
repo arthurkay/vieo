@@ -87,3 +87,26 @@ func MarkFilmstripGenerated(ctx context.Context, db *sql.DB, outputID int64) err
 	}
 	return nil
 }
+
+func ListOutputsWithoutFilmstrip(ctx context.Context, db *sql.DB) ([]Output, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, source_id, type, path, created_at
+		 FROM outputs
+		 WHERE filmstrip_generated = 0
+		 ORDER BY created_at ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list outputs without filmstrip: %w", err)
+	}
+	defer rows.Close()
+
+	var outputs []Output
+	for rows.Next() {
+		var o Output
+		if err := rows.Scan(&o.ID, &o.SourceID, &o.Type, &o.Path, &o.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan output: %w", err)
+		}
+		outputs = append(outputs, o)
+	}
+	return outputs, rows.Err()
+}
