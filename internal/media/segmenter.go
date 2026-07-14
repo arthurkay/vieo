@@ -190,8 +190,12 @@ func FinalizePlaylist(ctx context.Context, dir string) error {
 		if m == nil {
 			continue
 		}
+		segPath := filepath.Join(dir, name)
+		if !SegmentHasValidStreams(ctx, segPath) {
+			continue
+		}
 		n, _ := strconv.Atoi(m[1])
-		dur, _ := ProbeSegmentDuration(ctx, filepath.Join(dir, name))
+		dur, _ := ProbeSegmentDuration(ctx, segPath)
 		if dur <= 0 {
 			dur = 4.0
 		}
@@ -305,6 +309,10 @@ func RefreshLivePlaylist(ctx context.Context, dir string) error {
 		cacheKey := fmt.Sprintf("%s|%d|%d", segPath, info.ModTime().UnixNano(), info.Size())
 		if cached, ok := segmentDurationCache.Load(cacheKey); ok {
 			parsed = append(parsed, cached.(seg))
+			continue
+		}
+
+		if !SegmentHasValidStreams(ctx, segPath) {
 			continue
 		}
 

@@ -451,3 +451,51 @@ func ProbeSegmentStartPTS(ctx context.Context, segmentPath string) (float64, err
 
 	return 0, nil
 }
+
+// SegmentHasValidStreams checks that the segment contains a decodable video
+// stream and, when an audio stream is present, that it is valid (non-zero
+// sample rate / channel count). Segments with broken audio tracks (ffmpeg
+// sometimes writes a 0Hz/0-channel audio PID during interrupted or boundary
+// writes) cannot be played by HLS clients and must be excluded from playlists.
+func SegmentHasValidStreams(ctx context.Context, segmentPath string) bool {
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	args := []string{
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_entries", "stream=codec_type,sample_rate,channels",
+		segmentPath,
+	}
+	cmd := exec.CommandContext(probeCtx, "ffprobe", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false
+	}
+
+	var parsed struct {
+		Streams []struct {
+			CodecType  string `json:"codec_type"`
+			SampleRate string `json:"sample_rate"`
+			Channels   int    `json:"channels"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		return false
+	}
+
+	hasVideo := false
+	for _, s := range parsed.Streams {
+		switch s.CodecType {
+		case "video":
+			hasVideo = true
+		case "audio":
+			sr, _ := strconv.Atoi(s.SampleRate)
+			if sr <= 0 || s.Channels <= 0 {
+				return false
+			}
+		}
+	}
+
+	return hasVideo
+}
