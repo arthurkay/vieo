@@ -46,7 +46,13 @@ export default function Player() {
     queryFn: () => api.jobs.list(),
   })
 
+  const { data: sources } = useQuery({
+    queryKey: ['sources'],
+    queryFn: () => api.sources.list(),
+  })
+
   const job = jobs?.find((j) => j.output_id === id && j.status !== 'stopped')
+  const source = sources?.find((s) => s.id === job?.source_id)
 
   const { data: events = [] } = useQuery({
     queryKey: ['job-events', job?.id],
@@ -188,6 +194,7 @@ export default function Player() {
             events={events}
             onExport={handleExport}
             showExportButton={user?.role === 'admin'}
+            streamType={source?.stream_type}
             className="w-full h-full max-h-[calc(100vh-5rem)] sm:max-h-[calc(100vh-8rem)]"
           />
         </div>

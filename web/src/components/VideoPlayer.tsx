@@ -13,6 +13,7 @@ import {
   Gauge,
   Subtitles,
   Scissors,
+  AudioLines,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -43,6 +44,7 @@ interface VideoPlayerProps {
   events?: TimelineEvent[]
   onExport?: (startTime: number, duration: number) => void
   showExportButton?: boolean
+  streamType?: 'audio_video' | 'audio_only' | 'video_only'
 }
 
 function formatTime(seconds: number): string {
@@ -80,8 +82,8 @@ function getHlsConfig(isLive: boolean) {
       enableWorker: true,
       lowLatencyMode: false,
       liveDurationInfinity: true,
-      liveSyncDuration: LIVE_EDGE_BUFFER,
-      liveMaxLatencyDuration: LIVE_EDGE_BUFFER * 4,
+      liveSyncDuration: Infinity,
+      liveMaxLatencyDuration: Infinity,
       maxBufferLength: 30,
       maxMaxBufferLength: 120,
       backBufferLength: 120,
@@ -110,6 +112,7 @@ export default function VideoPlayer({
   events = [],
   onExport,
   showExportButton = false,
+  streamType,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -127,6 +130,7 @@ export default function VideoPlayer({
   const controlsVisibleRef = useRef(true)
 
   const [playing, setPlaying] = useState(false)
+  const [buffering, setBuffering] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(1)
@@ -240,6 +244,8 @@ export default function VideoPlayer({
           lastPublishedDurationRef.current = dur
         }
 
+        setBuffering(false)
+
         if (isLive) {
           lastDurationUpdateRef.current = Date.now()
           if (durationInterval) clearInterval(durationInterval)
@@ -343,12 +349,16 @@ export default function VideoPlayer({
       setVolume(video.volume)
       setMuted(video.muted)
     }
+    const onWaiting = () => setBuffering(true)
+    const onPlaying = () => setBuffering(false)
 
     video.addEventListener('play', onPlay)
     video.addEventListener('pause', onPause)
     video.addEventListener('timeupdate', onTimeUpdate)
     video.addEventListener('ended', onEnded)
     video.addEventListener('volumechange', onVolumeChange)
+    video.addEventListener('waiting', onWaiting)
+    video.addEventListener('playing', onPlaying)
 
     return () => {
       video.removeEventListener('play', onPlay)
@@ -356,6 +366,8 @@ export default function VideoPlayer({
       video.removeEventListener('timeupdate', onTimeUpdate)
       video.removeEventListener('ended', onEnded)
       video.removeEventListener('volumechange', onVolumeChange)
+      video.removeEventListener('waiting', onWaiting)
+      video.removeEventListener('playing', onPlaying)
     }
   }, [])
 
@@ -695,12 +707,25 @@ export default function VideoPlayer({
         </span>
       </div>
 
-      {/* Center play indicator */}
-      {!playing && (
+      {/* Audio-only placeholder */}
+      {streamType === 'audio_only' && (
         <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-          <div className="bg-black/40 rounded-full p-4">
-            <Play className="h-10 w-10 text-white fill-white" />
-          </div>
+          <AudioLines className="h-16 w-16 text-white/20" />
+        </div>
+      )}
+
+      {/* Center loading/play indicator */}
+      {!playing && streamType !== 'audio_only' && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+          {buffering ? (
+            <div className="bg-black/40 rounded-full p-4">
+              <div className="h-10 w-10 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+            </div>
+          ) : (
+            <div className="bg-black/40 rounded-full p-4">
+              <Play className="h-10 w-10 text-white fill-white" />
+            </div>
+          )}
         </div>
       )}
 
