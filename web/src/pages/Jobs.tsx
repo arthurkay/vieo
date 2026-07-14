@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -13,7 +14,7 @@ import { useWebSocket } from '@/hooks/use-websocket'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { MoreHorizontal, Play, Pause, PlayCircle, StopCircle, RotateCcw, Trash2, FileText, HardDrive, Download } from 'lucide-react'
-import type { Job, JobStatus, JobLog } from '@/types'
+import type { Job, JobStatus, JobLog, Export } from '@/types'
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -138,7 +139,17 @@ function ExportsCard() {
                   {formatTime(exp.start_time)} — {formatTime(exp.start_time + exp.duration)}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={exp.status === 'completed' ? 'running' : exp.status === 'failed' ? 'failed' : 'default'}>
+                  <Badge
+                    variant={
+                      exp.status === 'completed'
+                        ? 'completed'
+                        : exp.status === 'failed'
+                          ? 'failed'
+                          : exp.status === 'processing'
+                            ? 'running'
+                            : 'pending'
+                    }
+                  >
                     {exp.status}
                   </Badge>
                 </TableCell>
@@ -209,31 +220,31 @@ export default function Jobs() {
   const stopMutation = useMutation({
     mutationFn: (id: number) => api.jobs.stop(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
-    onError: (err: Error) => alert(`Stop failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Stop failed', err.message),
   })
 
   const pauseMutation = useMutation({
     mutationFn: (id: number) => api.jobs.pause(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
-    onError: (err: Error) => alert(`Pause failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Pause failed', err.message),
   })
 
   const resumeMutation = useMutation({
     mutationFn: (id: number) => api.jobs.resume(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
-    onError: (err: Error) => alert(`Resume failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Resume failed', err.message),
   })
 
   const continueMutation = useMutation({
     mutationFn: (id: number) => api.jobs.continue(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
-    onError: (err: Error) => alert(`Continue failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Continue failed', err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.jobs.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
-    onError: (err: Error) => alert(`Delete failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Delete failed', err.message),
   })
 
   useWebSocket((event) => {
@@ -251,6 +262,24 @@ export default function Jobs() {
       return
     }
     if (event.type === 'job:log') return
+    if (event.type === 'export:progress' || event.type === 'export:complete' || event.type === 'export:error') {
+      const payload = event.payload as { id?: number; status?: string; progress?: number }
+      if (payload?.id) {
+        queryClient.setQueryData<Export[]>(['exports'], (old) =>
+          old?.map((e) =>
+            e.id === payload.id
+              ? {
+                  ...e,
+                  status: payload.status as Export['status'],
+                  progress: payload.progress ?? e.progress,
+                }
+              : e,
+          ) ?? old,
+        )
+      }
+      queryClient.invalidateQueries({ queryKey: ['exports'] })
+      return
+    }
     queryClient.invalidateQueries({ queryKey: ['jobs'] })
   })
 
@@ -283,6 +312,7 @@ export default function Jobs() {
                 ))}
               </div>
             ) : jobs && jobs.length > 0 ? (
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -313,6 +343,7 @@ export default function Jobs() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             ) : (
               <div className="py-8 text-center text-muted-foreground">
                 No jobs found

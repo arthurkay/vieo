@@ -45,6 +45,7 @@ interface VideoPlayerProps {
   onExport?: (startTime: number, duration: number) => void
   showExportButton?: boolean
   streamType?: 'audio_video' | 'audio_only' | 'video_only'
+  outputId?: number
 }
 
 function formatTime(seconds: number): string {
@@ -56,6 +57,42 @@ function formatTime(seconds: number): string {
     return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
   return `${m}:${String(s)}`
+}
+
+function positionKey(outputId: number | undefined): string | null {
+  if (!outputId) return null
+  return `vieo_pos_${outputId}`
+}
+
+function loadSavedPosition(outputId: number | undefined): number {
+  const key = positionKey(outputId)
+  if (!key) return 0
+  try {
+    const v = localStorage.getItem(key)
+    return v ? parseFloat(v) : 0
+  } catch {
+    return 0
+  }
+}
+
+function savePosition(outputId: number | undefined, t: number) {
+  const key = positionKey(outputId)
+  if (!key) return
+  try {
+    localStorage.setItem(key, String(t))
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearPosition(outputId: number | undefined) {
+  const key = positionKey(outputId)
+  if (!key) return
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    /* ignore */
+  }
 }
 
 function formatDateTime(startISO: string, offsetSec: number): string {
@@ -82,7 +119,7 @@ function getHlsConfig(isLive: boolean) {
       enableWorker: true,
       lowLatencyMode: false,
       liveDurationInfinity: true,
-      liveSyncDuration: Infinity,
+      liveSyncDuration: 3,
       liveMaxLatencyDuration: Infinity,
       maxBufferLength: 30,
       maxMaxBufferLength: 120,
@@ -113,6 +150,7 @@ export default function VideoPlayer({
   onExport,
   showExportButton = false,
   streamType,
+  outputId,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -125,6 +163,7 @@ export default function VideoPlayer({
   const lastDurationUpdateRef = useRef(0)
   const lastPublishedDurationRef = useRef(0)
   const lastTimeUpdateRef = useRef(0)
+  const lastPositionSaveRef = useRef(0)
   const hoverThrottleRef = useRef(0)
   const seekingRef = useRef(false)
   const controlsVisibleRef = useRef(true)
@@ -232,7 +271,7 @@ export default function VideoPlayer({
 
     function attachHlsEvents(instance: Hls) {
       instance.on(Hls.Events.MANIFEST_PARSED, () => {
-        const restoreTime = savedTimeRef.current
+        const restoreTime = savedTimeRef.current || loadSavedPosition(outputId)
         if (restoreTime > 0) {
           videoEl.currentTime = restoreTime
           savedTimeRef.current = 0
@@ -342,9 +381,16 @@ export default function VideoPlayer({
           lastTimeUpdateRef.current = now
           setCurrentTime(video.currentTime)
         }
+        if (now - lastPositionSaveRef.current >= 5000) {
+          lastPositionSaveRef.current = now
+          savePosition(outputId, video.currentTime)
+        }
       }
     }
-    const onEnded = () => setPlaying(false)
+    const onEnded = () => {
+      setPlaying(false)
+      clearPosition(outputId)
+    }
     const onVolumeChange = () => {
       setVolume(video.volume)
       setMuted(video.muted)
@@ -398,6 +444,55 @@ export default function VideoPlayer({
     }
   }, [showControls])
 
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      switch (e.key) {
+        case ' ':
+        case 'k':
+        case 'K':
+          e.preventDefault()
+          togglePlay()
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          seekBy(-5)
+          break
+        case 'ArrowRight':
+          e.preventDefault()
+          seekBy(5)
+          break
+        case 'j':
+        case 'J':
+          e.preventDefault()
+          seekBy(-10)
+          break
+        case 'l':
+        case 'L':
+          e.preventDefault()
+          seekBy(10)
+          break
+        case 'f':
+        case 'F':
+          e.preventDefault()
+          toggleFullscreen()
+          break
+        case 'm':
+        case 'M':
+          e.preventDefault()
+          toggleMute()
+          break
+        default:
+          break
+      }
+    }
+    container.addEventListener('keydown', onKeyDown)
+    return () => container.removeEventListener('keydown', onKeyDown)
+  }, [toggleFullscreen, toggleMute, isLive, duration])
+
   function togglePlay() {
     const video = videoRef.current
     if (!video) return
@@ -406,6 +501,17 @@ export default function VideoPlayer({
     } else {
       video.pause()
     }
+  }
+
+  function seekBy(delta: number) {
+    const video = videoRef.current
+    if (!video) return
+    let target = video.currentTime + delta
+    if (isLive && duration > 0) {
+      target = Math.min(target, duration - LIVE_EDGE_BUFFER)
+    }
+    video.currentTime = Math.max(0, target)
+    setCurrentTime(video.currentTime)
   }
 
   function toggleMute() {
@@ -628,12 +734,14 @@ export default function VideoPlayer({
   return (
     <div
       ref={containerRef}
+      tabIndex={0}
       className={cn(
         'relative bg-black rounded-lg overflow-hidden select-none group',
         className,
       )}
       onClick={(e) => {
         if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === 'VIDEO') {
+          containerRef.current?.focus()
           togglePlay()
         }
       }}
@@ -810,12 +918,12 @@ export default function VideoPlayer({
                     }}
                   />
                   <div
-                    className="absolute top-0 h-full w-1 bg-blue-500 cursor-ew-resize pointer-events-auto"
+                    className="absolute top-0 h-full w-3 bg-blue-500 cursor-ew-resize pointer-events-auto"
                     style={{ left: `${(clipStart / seekMax) * 100}%`, transform: 'translateX(-50%)' }}
                     onMouseDown={(e) => handleClipMouseDown('start', e)}
                   />
                   <div
-                    className="absolute top-0 h-full w-1 bg-blue-500 cursor-ew-resize pointer-events-auto"
+                    className="absolute top-0 h-full w-3 bg-blue-500 cursor-ew-resize pointer-events-auto"
                     style={{ left: `${(clipEnd / seekMax) * 100}%`, transform: 'translateX(-50%)' }}
                     onMouseDown={(e) => handleClipMouseDown('end', e)}
                   />
@@ -945,7 +1053,7 @@ export default function VideoPlayer({
               max={100}
               step={1}
               onValueChange={handleVolumeChange}
-              className="w-20 cursor-pointer"
+              className="w-28 cursor-pointer"
               trackClassName="h-1"
               thumbClassName="h-3 w-3"
             />

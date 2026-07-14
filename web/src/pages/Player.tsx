@@ -1,18 +1,19 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { toast } from '@/lib/toast'
 import VideoPlayer from '@/components/VideoPlayer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
-import { ArrowLeft, Radio, Activity, Clock, Calendar, Bookmark, Trash2, MapPin } from 'lucide-react'
+import { ArrowLeft, Radio, Activity, Clock, Calendar, Bookmark, Trash2, MapPin, Pencil, Download } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useWebSocket } from '@/hooks/use-websocket'
-import type { JobEvent } from '@/types'
+import type { JobEvent, TimelineEvent } from '@/types'
 
 const EVENT_COLORS = ['#3b82f6', '#22c55e', '#ef4444', '#eab308', '#a855f7']
 
@@ -41,6 +42,10 @@ export default function Player() {
   const [eventLabel, setEventLabel] = useState('')
   const [eventColor, setEventColor] = useState(EVENT_COLORS[0])
 
+  const [editingEvent, setEditingEvent] = useState<TimelineEvent | null>(null)
+  const [editLabel, setEditLabel] = useState('')
+  const [editColor, setEditColor] = useState(EVENT_COLORS[0])
+
   const { data: jobs } = useQuery({
     queryKey: ['jobs'],
     queryFn: () => api.jobs.list(),
@@ -60,6 +65,11 @@ export default function Player() {
     enabled: !!job?.id,
   })
 
+  const sortedEvents = useMemo(
+    () => [...events].sort((a, b) => a.time_offset - b.time_offset),
+    [events],
+  )
+
   const createEventMutation = useMutation({
     mutationFn: (data: { time_offset: number; label: string; color: string }) =>
       api.events.create(job!.id, data),
@@ -77,6 +87,22 @@ export default function Player() {
     },
   })
 
+  const updateEventMutation = useMutation({
+    mutationFn: (data: { id: number; label: string; color: string; time_offset: number }) =>
+      api.events.update(data.id, { label: data.label, color: data.color, time_offset: data.time_offset }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-events', job?.id] })
+      setEditingEvent(null)
+    },
+    onError: (err: Error) => toast.error('Update event failed', err.message),
+  })
+
+  const startEditEvent = (ev: TimelineEvent) => {
+    setEditingEvent(ev)
+    setEditLabel(ev.label)
+    setEditColor(ev.color)
+  }
+
   useEffect(() => {
     if (job?.created_at) {
       const d = new Date(job.created_at)
@@ -87,6 +113,12 @@ export default function Player() {
   }, [job?.created_at])
 
   const isLive = job?.status === 'running'
+
+  useEffect(() => {
+    return () => {
+      if (downloadPollRef.current) clearInterval(downloadPollRef.current)
+    }
+  }, [])
 
   const handleJump = useCallback(() => {
     if (!job?.created_at) return
@@ -111,10 +143,39 @@ export default function Player() {
       duration: duration,
     }).then(() => {
       queryClient.invalidateQueries({ queryKey: ['exports'] })
+      toast.success('Export started', 'Your clip export has been queued')
     }).catch((err) => {
-      alert(`Export failed: ${err.message}`)
+      toast.error('Export failed', err.message)
     })
   }, [job, queryClient])
+
+  const downloadPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const handleDownloadFull = useCallback(() => {
+    if (!id) return
+    api.outputs.download(id).then((exp) => {
+      toast.info('Preparing download', 'Your recording is being packaged...')
+      if (downloadPollRef.current) clearInterval(downloadPollRef.current)
+      downloadPollRef.current = setInterval(() => {
+        api.exports.get(exp.id).then((e) => {
+          if (e.status === 'completed') {
+            if (downloadPollRef.current) clearInterval(downloadPollRef.current)
+            const link = document.createElement('a')
+            link.href = api.exports.downloadUrl(e.id)
+            link.download = `recording_${id}.mp4`
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            toast.success('Download ready', 'Your recording has been downloaded')
+          } else if (e.status === 'failed') {
+            if (downloadPollRef.current) clearInterval(downloadPollRef.current)
+            toast.error('Download failed', e.error_msg || 'Unknown error')
+          }
+        }).catch(() => {})
+      }, 2000)
+    }).catch((err) => {
+      toast.error('Download failed', err.message)
+    })
+  }, [id])
 
   const handleAddEvent = useCallback(() => {
     if (!eventLabel.trim()) return
@@ -162,44 +223,53 @@ export default function Player() {
           {job?.status && <Badge variant={job.status}>{job.status}</Badge>}
         </div>
 
-        {showJump && !isLive && (
-          <div className="ml-auto flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-muted-foreground hidden sm:block" />
-            <Input
-              type="date"
-              value={jumpDate}
-              onChange={(e) => setJumpDate(e.target.value)}
-              className="h-8 w-[140px] text-xs"
-            />
-            <Input
-              type="time"
-              value={jumpTime}
-              onChange={(e) => setJumpTime(e.target.value)}
-              step={1}
-              className="h-8 w-[110px] text-xs"
-            />
-            <Button size="sm" className="h-8" onClick={handleJump}>
-              Go
+        <div className="ml-auto flex items-center gap-2">
+          {showJump && !isLive && (
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground hidden sm:block" />
+              <Input
+                type="date"
+                value={jumpDate}
+                onChange={(e) => setJumpDate(e.target.value)}
+                className="h-8 w-[140px] text-xs"
+              />
+              <Input
+                type="time"
+                value={jumpTime}
+                onChange={(e) => setJumpTime(e.target.value)}
+                step={1}
+                className="h-8 w-[110px] text-xs"
+              />
+              <Button size="sm" className="h-8" onClick={handleJump}>
+                Go
+              </Button>
+            </div>
+          )}
+          {user?.role === 'admin' && (
+            <Button variant="outline" size="sm" className="h-8 gap-1" onClick={handleDownloadFull}>
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Download</span>
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0">
         <div className="flex-1 p-2 sm:p-4 min-h-0">
           <VideoPlayer
             streamUrl={`/api/stream/${id}/playlist.m3u8`}
             isLive={isLive}
             startTime={job?.created_at}
-            events={events}
+            events={sortedEvents}
             onExport={handleExport}
             showExportButton={user?.role === 'admin'}
             streamType={source?.stream_type}
+            outputId={id}
             className="w-full h-full max-h-[calc(100vh-5rem)] sm:max-h-[calc(100vh-8rem)]"
           />
         </div>
 
-        <div className="hidden lg:flex w-64 border-l flex-col p-4 gap-4 overflow-y-auto">
+        <div className="flex flex-col p-4 gap-4 overflow-y-auto max-h-[45vh] lg:max-h-none lg:w-64 lg:border-l lg:shrink-0">
           <Card className="bg-muted/50">
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground mb-1">Output</div>
@@ -304,29 +374,90 @@ export default function Player() {
                 </div>
               )}
 
-              {events.length === 0 ? (
+              {sortedEvents.length === 0 ? (
                 <div className="text-xs text-muted-foreground">No events</div>
               ) : (
                 <div className="space-y-1">
-                  {events.map((ev) => (
-                    <div
-                      key={ev.id}
-                      className="flex items-center gap-2 text-xs group cursor-pointer hover:bg-muted/50 rounded p-1 -m-1"
-                      onClick={() => handleSeekToEvent(ev.time_offset)}
-                    >
-                      <MapPin className="h-3 w-3 shrink-0" style={{ color: ev.color }} />
-                      <span className="truncate flex-1">{ev.label}</span>
-                      <span className="text-muted-foreground shrink-0">{formatTime(ev.time_offset)}</span>
-                      {user?.role === 'admin' && (
-                        <button
-                          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                          onClick={(e) => { e.stopPropagation(); deleteEventMutation.mutate(ev.id) }}
-                        >
-                          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                  {sortedEvents.map((ev) => {
+                    if (editingEvent && editingEvent.id === ev.id) {
+                      return (
+                        <div key={ev.id} className="rounded p-1 -m-1 bg-muted/50 space-y-2">
+                          <Input
+                            value={editLabel}
+                            onChange={(e) => setEditLabel(e.target.value)}
+                            className="h-7 text-xs"
+                            autoFocus
+                          />
+                          <div className="flex items-center gap-1">
+                            {EVENT_COLORS.map((c) => (
+                              <button
+                                key={c}
+                                type="button"
+                                className={cn(
+                                  'h-4 w-4 rounded-full border',
+                                  editColor === c ? 'border-foreground' : 'border-transparent',
+                                )}
+                                style={{ backgroundColor: c }}
+                                onClick={() => setEditColor(c)}
+                              />
+                            ))}
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs flex-1"
+                              disabled={!editLabel.trim() || updateEventMutation.isPending}
+                              onClick={() =>
+                                updateEventMutation.mutate({
+                                  id: ev.id,
+                                  label: editLabel.trim(),
+                                  color: editColor,
+                                  time_offset: ev.time_offset,
+                                })
+                              }
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs"
+                              onClick={() => setEditingEvent(null)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div
+                        key={ev.id}
+                        className="flex items-center gap-2 text-xs group cursor-pointer hover:bg-muted/50 rounded p-1 -m-1"
+                        onClick={() => handleSeekToEvent(ev.time_offset)}
+                      >
+                        <MapPin className="h-3 w-3 shrink-0" style={{ color: ev.color }} />
+                        <span className="truncate flex-1">{ev.label}</span>
+                        <span className="text-muted-foreground shrink-0">{formatTime(ev.time_offset)}</span>
+                        {user?.role === 'admin' && (
+                          <>
+                            <button
+                              className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                              onClick={(e) => { e.stopPropagation(); startEditEvent(ev) }}
+                            >
+                              <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                            </button>
+                            <button
+                              className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                              onClick={(e) => { e.stopPropagation(); deleteEventMutation.mutate(ev.id) }}
+                            >
+                              <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </CardContent>

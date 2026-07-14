@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -116,7 +117,7 @@ export default function Channels() {
       queryClient.invalidateQueries({ queryKey: ['channels'] })
       resetForm()
     },
-    onError: (err: Error) => alert(`Create failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Create failed', err.message),
   })
 
   const updateMutation = useMutation({
@@ -126,13 +127,13 @@ export default function Channels() {
       queryClient.invalidateQueries({ queryKey: ['channels'] })
       resetForm()
     },
-    onError: (err: Error) => alert(`Update failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Update failed', err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.channels.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['channels'] }),
-    onError: (err: Error) => alert(`Delete failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Delete failed', err.message),
   })
 
   function resetForm() {

@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import Sidebar, { SidebarToggle } from './components/Sidebar'
 import StorageBanner from './components/storage-banner'
+import ErrorBoundary from './components/error-boundary'
 import Dashboard from './pages/Dashboard'
 import Channels from './pages/Channels'
 import ChannelDetail from './pages/ChannelDetail'
@@ -11,6 +13,8 @@ import Jobs from './pages/Jobs'
 import Player from './pages/Player'
 import Login from './pages/Login'
 import Users from './pages/Users'
+import Recordings from './pages/Recordings'
+import Multiview from './pages/Multiview'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -34,6 +38,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user } = useAuth()
+  const location = useLocation()
 
   return (
     <div className="flex h-screen bg-background">
@@ -45,7 +50,9 @@ function AppRoutes() {
           <Route path="/login" element={<Login />} />
           <Route path="/player/:outputId" element={
             <div className="flex-1 overflow-hidden">
-              <Player />
+              <ErrorBoundary key={location.key}>
+                <Player />
+              </ErrorBoundary>
             </div>
           } />
           <Route path="*" element={
@@ -57,6 +64,8 @@ function AppRoutes() {
                   <Route path="/channels/:id" element={<ChannelDetail />} />
                   {user?.role === 'admin' && (
                     <>
+                      <Route path="/recordings" element={<Recordings />} />
+                      <Route path="/multiview" element={<Multiview />} />
                       <Route path="/sources" element={<Sources />} />
                       <Route path="/jobs" element={<Jobs />} />
                       <Route path="/users" element={<Users />} />
@@ -68,6 +77,7 @@ function AppRoutes() {
             </ProtectedRoute>
           } />
         </Routes>
+        <Toaster richColors position="bottom-right" />
       </div>
     </div>
   )

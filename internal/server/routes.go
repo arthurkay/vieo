@@ -47,6 +47,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/", handler.ListOutputs(s.DB))
 			r.Post("/", handler.CreateOutput(s.DB))
 			r.Get("/{id}/storage", handler.GetOutputStorage(s.DB, s.Config.DataDir))
+			r.Post("/{id}/download", handler.CreateOutputDownload(s.DB, s.Manager, s.Config.DataDir))
 			r.Delete("/{id}", handler.DeleteOutput(s.DB, s.Config.DataDir))
 		})
 
@@ -81,6 +82,7 @@ func (s *Server) setupRoutes() {
 		})
 
 		r.Post("/api/jobs/{id}/events", handler.CreateJobEvent(s.DB))
+		r.Put("/api/events/{id}", handler.UpdateEvent(s.DB))
 		r.Delete("/api/events/{id}", handler.DeleteEvent(s.DB))
 	})
 

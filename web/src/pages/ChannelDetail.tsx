@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -59,7 +60,7 @@ export default function ChannelDetail() {
       setShowSourceForm(false)
       setSourceUrl('')
     },
-    onError: (err: Error) => alert(`Create source failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Create source failed', err.message),
   })
 
   const startTranscodeMutation = useMutation({
@@ -69,7 +70,7 @@ export default function ChannelDetail() {
       return api.jobs.create(sourceId, newOutput.id)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
-    onError: (err: Error) => alert(`Start transcoding failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Start transcoding failed', err.message),
   })
 
   useWebSocket((event) => {

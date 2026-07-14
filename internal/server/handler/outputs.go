@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/arthur/vieo/internal/db/models"
+	"github.com/arthur/vieo/internal/job"
 	"github.com/arthur/vieo/internal/media"
 	"github.com/go-chi/chi/v5"
 )
@@ -84,5 +85,36 @@ func GetOutputStorage(db *sql.DB, dataDir string) http.HandlerFunc {
 		duration := media.PlaylistDuration(dir)
 
 		writeJSON(w, map[string]interface{}{"bytes": size, "duration": duration})
+	}
+}
+
+func CreateOutputDownload(db *sql.DB, mgr *job.Manager, dataDir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		output, err := models.GetOutput(r.Context(), db, id)
+		if err != nil {
+			http.Error(w, "output not found", http.StatusNotFound)
+			return
+		}
+
+		dir := media.OutputDir(dataDir, id)
+		duration := media.PlaylistDuration(dir)
+		if duration <= 0 {
+			http.Error(w, "nothing to download", http.StatusBadRequest)
+			return
+		}
+
+		export, err := mgr.StartExport(r.Context(), output.SourceID, id, 0, duration)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		writeJSON(w, export)
 	}
 }

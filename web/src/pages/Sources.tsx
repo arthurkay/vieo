@@ -1,6 +1,7 @@
 import { useState, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -120,7 +121,7 @@ function ScheduleForm({ sourceId, onClose }: { sourceId: number; onClose: () => 
       queryClient.invalidateQueries({ queryKey: ['schedules'] })
       onClose()
     },
-    onError: (err: Error) => alert(`Create failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Create failed', err.message),
   })
 
   function toggleDay(day: string) {
@@ -296,7 +297,7 @@ function EditableSourceName({ source }: { source: Source }) {
       queryClient.invalidateQueries({ queryKey: ['sources'] })
       setEditing(false)
     },
-    onError: (err: Error) => alert(`Update failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Update failed', err.message),
   })
 
   if (editing) {
@@ -368,13 +369,13 @@ export default function Sources() {
       setWatermarkText('LIVE')
       setWatermarkPosition('top-left')
     },
-    onError: (err: Error) => alert(`Create failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Create failed', err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.sources.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources'] }),
-    onError: (err: Error) => alert(`Delete failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Delete failed', err.message),
   })
 
   const deleteOutputMutation = useMutation({
@@ -383,18 +384,18 @@ export default function Sources() {
       queryClient.invalidateQueries({ queryKey: ['outputs'] })
       setDeleteOutputId(null)
     },
-    onError: (err: Error) => alert(`Delete output failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Delete output failed', err.message),
   })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const parsedChannelId = parseInt(channelId)
     if (!parsedChannelId || isNaN(parsedChannelId)) {
-      alert('Please select a channel')
+      toast.error('Validation error', 'Please select a channel')
       return
     }
     if (!url.trim()) {
-      alert('URL is required')
+      toast.error('Validation error', 'URL is required')
       return
     }
     const metadata = type === 'device' && watermarkEnabled
@@ -536,6 +537,7 @@ export default function Sources() {
                 ))}
               </div>
             ) : sources && sources.length > 0 ? (
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -627,6 +629,7 @@ export default function Sources() {
                   })}
                 </TableBody>
               </Table>
+              </div>
             ) : (
               <div className="py-8 text-center text-muted-foreground">
                 No sources yet. Create one to get started.

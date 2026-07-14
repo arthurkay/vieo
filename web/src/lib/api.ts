@@ -81,6 +81,8 @@ export const api = {
     create: (data: Partial<Output>) =>
       request<Output>('/outputs', { method: 'POST', body: JSON.stringify(data) }),
     storage: (id: number) => request<{ bytes: number; duration: number }>(`/outputs/${id}/storage`),
+    download: (id: number) =>
+      request<Export>(`/outputs/${id}/download`, { method: 'POST' }),
     delete: (id: number) =>
       request<void>(`/outputs/${id}`, { method: 'DELETE' }),
   },
@@ -142,6 +144,8 @@ export const api = {
     listByJob: (jobId: number) => request<TimelineEvent[]>(`/jobs/${jobId}/events`),
     create: (jobId: number, data: { time_offset: number; label: string; color?: string }) =>
       request<TimelineEvent>(`/jobs/${jobId}/events`, { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: number, data: { time_offset: number; label: string; color: string }) =>
+      request<TimelineEvent>(`/events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number) =>
       request<void>(`/events/${id}`, { method: 'DELETE' }),
   },

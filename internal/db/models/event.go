@@ -68,3 +68,39 @@ func DeleteEvent(ctx context.Context, db *sql.DB, id int64) error {
 	}
 	return nil
 }
+
+type UpdateEventInput struct {
+	TimeOffset float64 `json:"time_offset"`
+	Label      string  `json:"label"`
+	Color      string  `json:"color"`
+}
+
+func UpdateEvent(ctx context.Context, db *sql.DB, id int64, in UpdateEventInput) (*TimelineEvent, error) {
+	if in.Label == "" {
+		return nil, fmt.Errorf("label is required")
+	}
+	color := in.Color
+	if color == "" {
+		color = "#3b82f6"
+	}
+	res, err := db.ExecContext(ctx,
+		"UPDATE timeline_events SET time_offset = ?, label = ?, color = ? WHERE id = ?",
+		in.TimeOffset, in.Label, color, id,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("update event: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return nil, fmt.Errorf("event not found")
+	}
+	var e TimelineEvent
+	err = db.QueryRowContext(ctx,
+		"SELECT id, job_id, time_offset, label, color, created_at FROM timeline_events WHERE id = ?",
+		id,
+	).Scan(&e.ID, &e.JobID, &e.TimeOffset, &e.Label, &e.Color, &e.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("scan event: %w", err)
+	}
+	return &e, nil
+}

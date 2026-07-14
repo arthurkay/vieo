@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -39,13 +40,13 @@ export default function Users() {
       setPassword('')
       setRole('guest')
     },
-    onError: (err: Error) => alert(`Create failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Create failed', err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.auth.users.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
-    onError: (err: Error) => alert(`Delete failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Delete failed', err.message),
   })
 
   const resetMutation = useMutation({
@@ -55,13 +56,13 @@ export default function Users() {
       setResetId(null)
       setResetPassword('')
     },
-    onError: (err: Error) => alert(`Reset failed: ${err.message}`),
+    onError: (err: Error) => toast.error('Reset failed', err.message),
   })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!username.trim() || !password.trim()) {
-      alert('Username and password are required')
+      toast.error('Validation error', 'Username and password are required')
       return
     }
     createMutation.mutate()
