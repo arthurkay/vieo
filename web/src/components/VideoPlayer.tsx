@@ -123,8 +123,10 @@ function getHlsConfig(isLive: boolean) {
       liveMaxLatencyDuration: Infinity,
       maxBufferLength: 30,
       maxMaxBufferLength: 120,
-      backBufferLength: 120,
-      liveBackBufferLength: 120,
+      // Keep the entire archive buffered so viewers can scrub back through the
+      // full recording (across all job sessions), not just the last 120s.
+      backBufferLength: Infinity,
+      liveBackBufferLength: Infinity,
       maxBufferSize: 30 * 1024 * 1024,
     }
   }
@@ -277,30 +279,45 @@ export default function VideoPlayer({
           savedTimeRef.current = 0
         }
 
-        const dur = videoEl.duration
-        if (isFinite(dur)) {
-          setDuration(dur)
-          lastPublishedDurationRef.current = dur
-        }
-
         setBuffering(false)
 
         if (isLive) {
+          // For live streams video.duration is Infinity (liveDurationInfinity),
+          // so derive the archive length from the seekable window instead.
+          const updateDuration = () => {
+            const seekable = videoEl.seekable
+            let newDur = 0
+            if (seekable && seekable.length > 0) {
+              newDur = seekable.end(seekable.length - 1)
+            } else if (isFinite(videoEl.duration) && videoEl.duration !== Infinity) {
+              newDur = videoEl.duration
+            }
+            if (newDur > 0) {
+              setDuration(newDur)
+              lastPublishedDurationRef.current = newDur
+            }
+          }
+          updateDuration()
           lastDurationUpdateRef.current = Date.now()
           if (durationInterval) clearInterval(durationInterval)
           durationInterval = setInterval(() => {
-            if (!videoEl.duration || !isFinite(videoEl.duration)) return
+            const seekable = videoEl.seekable
+            let newDur = 0
+            if (seekable && seekable.length > 0) {
+              newDur = seekable.end(seekable.length - 1)
+            }
+            if (newDur <= 0) return
             const now = Date.now()
             const elapsed = now - lastDurationUpdateRef.current
-            const newDur = videoEl.duration
-            // Only push duration update if it changed by >5s or 15s elapsed
-            if (Math.abs(newDur - lastPublishedDurationRef.current) > 5 || elapsed > 15000) {
+            // Push duration update if it changed by >1s or 15s elapsed
+            if (Math.abs(newDur - lastPublishedDurationRef.current) > 1 || elapsed > 15000) {
               setDuration(newDur)
               lastPublishedDurationRef.current = newDur
               lastDurationUpdateRef.current = now
             }
           }, 3000)
         } else {
+          const dur = videoEl.duration
           if (isFinite(dur)) {
             setDuration(dur)
           }
@@ -945,7 +962,9 @@ export default function VideoPlayer({
               />
             </div>
             <span className="text-white/60 text-xs font-mono tabular-nums w-16 shrink-0">
-              {isLive ? `-${formatTime(Math.max(0, duration - currentTime))}` : formatTime(duration)}
+              {isLive && duration > currentTime
+                ? `-${formatTime(duration - currentTime)}`
+                : formatTime(duration)}
             </span>
           </div>
           {/* Clip mode info bar */}
