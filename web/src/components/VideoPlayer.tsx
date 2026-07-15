@@ -397,6 +397,14 @@ export default function VideoPlayer({
     }
     const onWaiting = () => setBuffering(true)
     const onPlaying = () => setBuffering(false)
+    const onDurationChange = () => {
+      const d = video.duration
+      // Update when hls.js resolves the full timeline after MANIFEST_PARSED
+      // (e.g. recordings with many discontinuities across sessions).
+      if (isFinite(d) && d > 0) {
+        setDuration((prev) => (d > prev ? d : prev))
+      }
+    }
 
     video.addEventListener('play', onPlay)
     video.addEventListener('pause', onPause)
@@ -405,6 +413,7 @@ export default function VideoPlayer({
     video.addEventListener('volumechange', onVolumeChange)
     video.addEventListener('waiting', onWaiting)
     video.addEventListener('playing', onPlaying)
+    video.addEventListener('durationchange', onDurationChange)
 
     return () => {
       video.removeEventListener('play', onPlay)
@@ -414,6 +423,7 @@ export default function VideoPlayer({
       video.removeEventListener('volumechange', onVolumeChange)
       video.removeEventListener('waiting', onWaiting)
       video.removeEventListener('playing', onPlaying)
+      video.removeEventListener('durationchange', onDurationChange)
     }
   }, [])
 
