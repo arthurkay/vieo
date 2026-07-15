@@ -255,9 +255,14 @@ function RegisteredCameras() {
   })
 
   const startMutation = useMutation({
-    mutationFn: async (sourceId: number) => {
-      const output = await api.outputs.create({ source_id: sourceId, type: 'hls', path: '' })
-      return api.jobs.create(sourceId, output.id)
+    mutationFn: async (camera: CameraStatus) => {
+      // Resume an existing job (stopped/completed/failed) instead of spawning a new one.
+      if (camera.job_id && camera.job_status && camera.job_status !== 'running') {
+        return api.jobs.continue(camera.job_id)
+      }
+      // First start for this source: create the (idempotent) output + a new job.
+      const output = await api.outputs.create({ source_id: camera.id, type: 'hls', path: '' })
+      return api.jobs.create(camera.id, output.id)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cameras-status'] })
@@ -321,7 +326,7 @@ function RegisteredCameras() {
                   </Button>
                 </>
               ) : (
-                <Button size="sm" onClick={() => startMutation.mutate(c.id)} disabled={startMutation.isPending}>
+                  <Button size="sm" onClick={() => startMutation.mutate(c)} disabled={startMutation.isPending}>
                   <Play className="h-3 w-3 mr-1" /> Start Stream
                 </Button>
               )}

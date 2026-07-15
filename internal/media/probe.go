@@ -357,6 +357,13 @@ func (m *MediaInfo) HasAudio() bool {
 	return false
 }
 
+// IsAudioOnly reports whether the media contains an audio stream but no video
+// stream (e.g. a radio/audio HLS source). It is used to render an audio player
+// instead of a video player for such sources.
+func (m *MediaInfo) IsAudioOnly() bool {
+	return m.HasAudio() && !m.HasVideo()
+}
+
 func parseFrameRate(r string) string {
 	parts := strings.Split(r, "/")
 	if len(parts) != 2 {

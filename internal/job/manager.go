@@ -357,6 +357,11 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 			log.Printf("probe device job %d: %v, using defaults", jobID, pErr)
 		} else {
 			hasVideo = info.HasVideo()
+			if info.IsAudioOnly() {
+				_ = models.UpdateSourceStreamType(ctx, m.DB, sourceID, "audio_only")
+			} else if !info.HasAudio() {
+				_ = models.UpdateSourceStreamType(ctx, m.DB, sourceID, "video_only")
+			}
 			if devInfo != nil {
 				tcExtra.InputFormat = devInfo.InputFormat
 				tcExtra.VideoSize = devInfo.VideoSize
@@ -383,16 +388,16 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 		} else {
 			totalDuration = 0
 			hasVideo = info.HasVideo()
-			hasAudio := info.HasAudio()
 
 			var newStreamType string
-			if hasVideo && hasAudio {
-				newStreamType = "audio_video"
-			} else if hasVideo {
-				newStreamType = "video_only"
-			} else if hasAudio {
+			switch {
+			case info.IsAudioOnly():
 				newStreamType = "audio_only"
-			} else {
+			case hasVideo && info.HasAudio():
+				newStreamType = "audio_video"
+			case hasVideo:
+				newStreamType = "video_only"
+			default:
 				newStreamType = "audio_video"
 			}
 			if newStreamType != source.StreamType {
@@ -433,16 +438,16 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 
 		totalDuration = info.Format.Duration
 		hasVideo = info.HasVideo()
-		hasAudio := info.HasAudio()
 
 		var newStreamType string
-		if hasVideo && hasAudio {
-			newStreamType = "audio_video"
-		} else if hasVideo {
-			newStreamType = "video_only"
-		} else if hasAudio {
+		switch {
+		case info.IsAudioOnly():
 			newStreamType = "audio_only"
-		} else {
+		case hasVideo && info.HasAudio():
+			newStreamType = "audio_video"
+		case hasVideo:
+			newStreamType = "video_only"
+		default:
 			newStreamType = "audio_video"
 		}
 		if newStreamType != source.StreamType {

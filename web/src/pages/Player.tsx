@@ -56,7 +56,14 @@ export default function Player() {
     queryFn: () => api.sources.list(),
   })
 
-  const job = jobs?.find((j) => j.output_id === id && j.status !== 'stopped')
+  const job = useMemo(() => {
+    // For recorded content the job is stopped/completed, so don't exclude it —
+    // we still need the source (and its stream_type) to render correctly.
+    // Prefer a running job (live); otherwise fall back to the most recent one.
+    const list = jobs?.filter((j) => j.output_id === id) ?? []
+    return list.find((j) => j.status === 'running') ?? list[0] ?? undefined
+  }, [jobs, id])
+
   const source = sources?.find((s) => s.id === job?.source_id)
 
   const { data: events = [] } = useQuery({
