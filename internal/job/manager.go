@@ -544,16 +544,55 @@ func (m *Manager) runJob(ctx context.Context, jobID, sourceID, outputID int64, s
 		}()
 	}
 
-	if err := media.Transcode(ctx, tc, onProgress); err != nil {
-		if ctx.Err() != nil {
+	// Transcode loop. For RTSP sources, ffmpeg has no native reconnect, so
+	// if the stream drops we wait and resume from the last segment on disk
+	// (up to maxReconnects times). A run that lasts longer than
+	// reconnectResetWindow is treated as stable and the counter resets.
+	const maxReconnects = 10
+	const reconnectDelay = 5 * time.Second
+	const reconnectResetWindow = 60 * time.Second
+	reconnectCount := 0
+
+	for {
+		attemptStart := time.Now()
+		if err := media.Transcode(ctx, tc, onProgress); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+
+			if source.Type == "rtsp" && reconnectCount < maxReconnects {
+				reconnectCount++
+				msg := fmt.Sprintf("rtsp stream dropped, reconnecting (attempt %d/%d): %v", reconnectCount, maxReconnects, err)
+				_ = models.CreateJobLog(ctx, m.DB, &models.JobLog{JobID: jobID, Level: "warn", Message: msg})
+				m.emit(JobEvent{Type: EventLog, Payload: map[string]any{
+					"id": jobID, "level": "warn", "message": msg,
+				}})
+
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(reconnectDelay):
+				}
+
+				if newStart, rErr := media.PrepareResume(outputDir); rErr == nil {
+					tc.StartNumber = newStart
+				}
+				continue
+			}
+
+			_ = models.FailJob(ctx, m.DB, jobID, err.Error())
+			m.emit(JobEvent{Type: EventError, Payload: map[string]any{
+				"id": jobID, "status": "failed", "error": err.Error(),
+			}})
 			return
 		}
 
-		_ = models.FailJob(ctx, m.DB, jobID, err.Error())
-		m.emit(JobEvent{Type: EventError, Payload: map[string]any{
-			"id": jobID, "status": "failed", "error": err.Error(),
-		}})
-		return
+		// Clean exit (ffmpeg finished on its own). Treat a long-lived run as
+		// proof of a stable stream and reset the reconnect budget.
+		if time.Since(attemptStart) > reconnectResetWindow {
+			reconnectCount = 0
+		}
+		break
 	}
 
 	if err := media.FinalizePlaylist(ctx, outputDir); err != nil {

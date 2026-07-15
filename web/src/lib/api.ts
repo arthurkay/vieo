@@ -1,4 +1,4 @@
-import type { Channel, Source, Output, Job, JobLog, User, Schedule, Export, TimelineEvent } from '@/types'
+import type { Channel, Source, Output, Job, JobLog, User, Schedule, Export, TimelineEvent, V4L2Device, DiscoveryResponse, CameraStatusResponse } from '@/types'
 
 const BASE = '/api'
 
@@ -148,5 +148,23 @@ export const api = {
       request<TimelineEvent>(`/events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number) =>
       request<void>(`/events/${id}`, { method: 'DELETE' }),
+  },
+
+  devices: {
+    list: async () => {
+      const res = await request<{ devices: V4L2Device[] }>('/devices')
+      return res.devices ?? []
+    },
+  },
+
+  cameras: {
+    discover: (timeout?: number, username?: string, password?: string) =>
+      request<DiscoveryResponse>('/cameras/discover', {
+        method: 'POST',
+        body: JSON.stringify({ timeout, username, password }),
+      }),
+    status: () =>
+      request<CameraStatusResponse>('/cameras/status'),
+    snapshotUrl: (id: number) => `/api/cameras/${id}/snapshot`,
   },
 }

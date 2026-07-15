@@ -90,6 +90,30 @@ func ListSegments(outputDir string) ([]string, error) {
 	return segments, nil
 }
 
+// HasRecentSegments reports whether the output directory contains a .ts segment
+// modified within the given window. Used to determine if a live/recording
+// source is currently active.
+func HasRecentSegments(outputDir string, window time.Duration) bool {
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return false
+	}
+	cutoff := time.Now().Add(-window)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".ts" {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(cutoff) {
+			return true
+		}
+	}
+	return false
+}
+
 func DirSize(dir string) (int64, error) {
 	var size int64
 	entries, err := os.ReadDir(dir)

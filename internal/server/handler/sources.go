@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/arthur/vieo/internal/db/models"
+	"github.com/arthur/vieo/internal/job"
+	"github.com/arthur/vieo/internal/media"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -127,7 +131,7 @@ func UpdateSource(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-func DeleteSource(db *sql.DB) http.HandlerFunc {
+func DeleteSource(db *sql.DB, mgr *job.Manager, dataDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
@@ -135,10 +139,48 @@ func DeleteSource(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		cleanupSourceResources(r.Context(), db, mgr, dataDir, id)
+
 		if err := models.DeleteSource(r.Context(), db, id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// cleanupSourceResources stops any active jobs/exports for a source and removes
+// its output directories from disk. The DB rows are left for the caller to
+// delete (which cascades to jobs, exports, etc.).
+func cleanupSourceResources(ctx context.Context, db *sql.DB, mgr *job.Manager, dataDir string, sourceID int64) {
+	// 1. Stop active jobs (running/paused/pending have live goroutines).
+	jobs, err := models.ListJobs(ctx, db, "", &sourceID)
+	if err == nil {
+		for _, j := range jobs {
+			if j.Status == "running" || j.Status == "paused" || j.Status == "pending" {
+				_ = mgr.StopJob(ctx, j.ID)
+			}
+		}
+	}
+
+	// 2. Cancel and remove export files.
+	exports, err := models.ListExportsBySource(ctx, db, sourceID)
+	if err == nil {
+		for _, e := range exports {
+			if e.Status == "processing" || e.Status == "pending" {
+				_ = mgr.CancelExport(ctx, e.ID)
+			}
+			if e.FilePath != "" {
+				_ = os.Remove(e.FilePath)
+			}
+		}
+	}
+
+	// 3. Delete output directories.
+	outputs, err := models.ListOutputsBySource(ctx, db, sourceID)
+	if err == nil {
+		for _, o := range outputs {
+			_ = os.RemoveAll(media.OutputDir(dataDir, o.ID))
+		}
 	}
 }

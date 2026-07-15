@@ -157,3 +157,49 @@ export interface Schedule {
   last_started: string | null
   created_at: string
 }
+
+// Local V4L2 capture device discovered on the backend host.
+export interface V4L2Device {
+  path: string
+  card: string
+  driver: string
+  bus_info: string
+  resolutions: string[]
+  default_resolution: string
+}
+
+// IP camera discovered via ONVIF WS-Discovery.
+export interface ONVIFCamera {
+  endpoint: string
+  host: string
+  port: number
+  manufacturer: string
+  model: string
+  firmware: string
+  serial: string
+  stream_uri: string
+  username: string
+}
+
+// Runtime health status of a registered camera-type source.
+export interface CameraStatus {
+  id: number
+  name: string
+  type: string
+  url: string
+  status: 'online' | 'recording' | 'offline' | 'error'
+  last_seen?: string
+  job_status?: string
+  job_id?: number
+  output_id?: number
+}
+
+export interface DiscoveryResponse {
+  cameras: ONVIFCamera[]
+  count: number
+}
+
+export interface CameraStatusResponse {
+  cameras: CameraStatus[]
+  count: number
+}

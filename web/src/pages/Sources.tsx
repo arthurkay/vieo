@@ -349,6 +349,8 @@ export default function Sources() {
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [deleteOutputId, setDeleteOutputId] = useState<number | null>(null)
   const [expandedSource, setExpandedSource] = useState<number | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [foundDevices, setFoundDevices] = useState<{ path: string; card: string }[]>([])
 
   const { data: sources, isLoading } = useQuery({ queryKey: ['sources'], queryFn: () => api.sources.list() })
   const { data: channels } = useQuery({ queryKey: ['channels'], queryFn: api.channels.list })
@@ -386,6 +388,19 @@ export default function Sources() {
     },
     onError: (err: Error) => toast.error('Delete output failed', err.message),
   })
+
+  async function scanDevices() {
+    setScanning(true)
+    try {
+      const devices = await api.devices.list()
+      setFoundDevices(devices.map((d) => ({ path: d.path, card: d.card })))
+      if (devices.length === 0) toast.info('No local devices found')
+    } catch (err) {
+      toast.error('Scan failed', (err as Error).message)
+    } finally {
+      setScanning(false)
+    }
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -463,7 +478,7 @@ export default function Sources() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
+                   <div className="space-y-2">
                     <Label>{type === 'file' ? 'File Path' : 'URL'}</Label>
                     <Input
                       value={url}
@@ -471,6 +486,24 @@ export default function Sources() {
                       placeholder={type === 'file' ? '/path/to/video.mp4' : type === 'device' ? '/dev/video0' : type === 'udp' ? 'udp://239.0.0.1:5000' : type === 'rtp' ? 'rtp://239.0.0.1:5004' : type === 'srt' ? 'srt://host:9000?mode=listener' : 'https://...m3u8, rtmp://..., or rtsp://...'}
                       required
                     />
+                    {type === 'device' && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <Button type="button" variant="outline" size="sm" onClick={scanDevices} disabled={scanning}>
+                          <Plus className="h-3 w-3 mr-1" /> {scanning ? 'Scanning...' : 'Scan local devices'}
+                        </Button>
+                        {foundDevices.map((d) => (
+                          <button
+                            key={d.path}
+                            type="button"
+                            onClick={() => setUrl(d.path)}
+                            className="px-2 py-1 text-xs rounded border bg-secondary text-secondary-foreground hover:bg-accent"
+                            title={d.card}
+                          >
+                            {d.path}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 {type === 'device' && (

@@ -37,6 +37,14 @@ func CreateOutput(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Reuse an existing output for this source so that re-starting a
+		// camera always writes to the same HLS directory instead of spawning
+		// duplicate streams.
+		if existing, err := models.GetOutputBySource(r.Context(), db, o.SourceID); err == nil {
+			writeJSON(w, existing)
+			return
+		}
+
 		if err := models.CreateOutput(r.Context(), db, &o); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

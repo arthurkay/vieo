@@ -1,3 +1,5 @@
+github.com/0x524a/onvif-go v1.1.4 h1:oAyQO++9pGOfmHsxRs8MV/4scwsWATi2+gJoFck84D8=
+github.com/0x524a/onvif-go v1.1.4/go.mod h1:QRsmatmBZXM5zOHHI4SBaV6X2NdkSU+DXLDDRzM+xS4=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/go-chi/chi/v5 v5.3.0 h1:halUjDxhshgXHMrao5bB8eNBXo/rnzwr8m5m36glehM=

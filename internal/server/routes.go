@@ -39,8 +39,15 @@ func (s *Server) setupRoutes() {
 			r.Post("/", handler.CreateSource(s.DB))
 			r.Get("/{id}", handler.GetSource(s.DB))
 			r.Put("/{id}", handler.UpdateSource(s.DB))
-			r.Delete("/{id}", handler.DeleteSource(s.DB))
+			r.Delete("/{id}", handler.DeleteSource(s.DB, s.Manager, s.Config.DataDir))
 		})
+
+		// Local camera (V4L2) discovery
+		r.Get("/api/devices", handler.ListDevices())
+
+		// IP camera (ONVIF) discovery + camera management
+		r.Post("/api/cameras/discover", handler.DiscoverCameras())
+		r.Get("/api/cameras/status", handler.GetCameraStatus(s.DB, s.Config.DataDir))
 
 		r.Route("/api/outputs", func(r chi.Router) {
 			r.Use(chimw.Timeout(60 * time.Second))
@@ -98,7 +105,7 @@ func (s *Server) setupRoutes() {
 			r.Use(RequireRole("admin"))
 			r.Post("/", handler.CreateChannel(s.DB))
 			r.Put("/{id}", handler.UpdateChannel(s.DB))
-			r.Delete("/{id}", handler.DeleteChannel(s.DB))
+			r.Delete("/{id}", handler.DeleteChannel(s.DB, s.Manager, s.Config.DataDir))
 		})
 	})
 
@@ -111,5 +118,6 @@ func (s *Server) setupRoutes() {
 		r.Use(AuthMiddleware(s.DB, s.Config.JWTSecret))
 		r.Get("/api/ws", handler.WebSocket(s.DB, s.Manager))
 		r.Get("/api/jobs/{id}/events", handler.ListJobEvents(s.DB))
+		r.Get("/api/cameras/{id}/snapshot", handler.GetCameraSnapshot(s.DB))
 	})
 }

@@ -71,6 +71,27 @@ func GetExport(ctx context.Context, db *sql.DB, id int64) (*Export, error) {
 	return &e, nil
 }
 
+func ListExportsBySource(ctx context.Context, db *sql.DB, sourceID int64) ([]Export, error) {
+	rows, err := db.QueryContext(ctx,
+		"SELECT id, source_id, output_id, status, progress, start_time, duration, file_path, file_size, error_msg, created_at, completed_at FROM exports WHERE source_id = ? ORDER BY created_at DESC",
+		sourceID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list exports by source: %w", err)
+	}
+	defer rows.Close()
+
+	var exports []Export
+	for rows.Next() {
+		var e Export
+		if err := rows.Scan(&e.ID, &e.SourceID, &e.OutputID, &e.Status, &e.Progress, &e.StartTime, &e.Duration, &e.FilePath, &e.FileSize, &e.ErrorMsg, &e.CreatedAt, &e.CompletedAt); err != nil {
+			return nil, fmt.Errorf("scan export: %w", err)
+		}
+		exports = append(exports, e)
+	}
+	return exports, rows.Err()
+}
+
 func UpdateExportStatus(ctx context.Context, db *sql.DB, id int64, status string, progress float64) error {
 	_, err := db.ExecContext(ctx,
 		"UPDATE exports SET status = ?, progress = ? WHERE id = ?",

@@ -9,6 +9,7 @@ import (
 
 	"github.com/arthur/vieo/internal/auth"
 	"github.com/arthur/vieo/internal/db/models"
+	"github.com/arthur/vieo/internal/job"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -107,12 +108,21 @@ func UpdateChannel(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-func DeleteChannel(db *sql.DB) http.HandlerFunc {
+func DeleteChannel(db *sql.DB, mgr *job.Manager, dataDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
 			http.Error(w, "invalid id", http.StatusBadRequest)
 			return
+		}
+
+		// Clean up every resource belonging to this channel's sources before
+		// deleting the DB row (which cascades to sources, outputs, jobs, etc.).
+		sources, err := models.ListSources(r.Context(), db, &id)
+		if err == nil {
+			for _, src := range sources {
+				cleanupSourceResources(r.Context(), db, mgr, dataDir, src.ID)
+			}
 		}
 
 		if err := models.DeleteChannel(r.Context(), db, id); err != nil {

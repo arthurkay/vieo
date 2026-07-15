@@ -15,6 +15,7 @@ import Login from './pages/Login'
 import Users from './pages/Users'
 import Recordings from './pages/Recordings'
 import Multiview from './pages/Multiview'
+import Cameras from './pages/Cameras'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -66,6 +67,7 @@ function AppRoutes() {
                     <>
                       <Route path="/recordings" element={<Recordings />} />
                       <Route path="/multiview" element={<Multiview />} />
+                      <Route path="/cameras" element={<Cameras />} />
                       <Route path="/sources" element={<Sources />} />
                       <Route path="/jobs" element={<Jobs />} />
                       <Route path="/users" element={<Users />} />

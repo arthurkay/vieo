@@ -112,6 +112,12 @@ func buildInputArgs(cfg TranscodeConfig) []string {
 		if cfg.FrameRate != "" {
 			args = append(args, "-framerate", cfg.FrameRate)
 		}
+	case "rtsp":
+		// Use TCP interleaving to avoid UDP packet loss on unreliable
+		// networks, and set a socket read/write timeout so a stalled stream
+		// fails fast instead of hanging (enables the reconnect loop in the
+		// job manager).
+		args = append(args, "-rtsp_transport", "tcp", "-rw_timeout", "10000000")
 	case "hls":
 		args = append(args, "-re", "-rw_timeout", "5000000")
 	case "udp":
@@ -159,6 +165,29 @@ func GenerateThumbnailFromSegment(ctx context.Context, segmentPath, outputPath s
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("generate thumbnail from segment: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// CaptureStreamSnapshot grabs a single frame from a live network stream
+// (RTSP/RTMP/etc.) and writes it as a JPEG. For RTSP it forces TCP transport
+// and a socket timeout so a dead stream fails fast instead of hanging.
+func CaptureStreamSnapshot(ctx context.Context, streamURL, outputPath string) error {
+	args := []string{
+		"-y",
+		"-rtsp_transport", "tcp",
+		"-rw_timeout", "10000000",
+		"-analyzeduration", "5000000",
+		"-probesize", "5000000",
+		"-i", streamURL,
+		"-frames:v", "1",
+		"-q:v", "2",
+		outputPath,
+	}
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("capture stream snapshot: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

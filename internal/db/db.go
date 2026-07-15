@@ -112,7 +112,18 @@ type DB struct {
 }
 
 func Open(ctx context.Context, path string) (*DB, error) {
-	conn, err := sql.Open("sqlite", path)
+	// Enable foreign keys via the DSN so every connection enforces
+	// ON DELETE CASCADE constraints (modernc.org/sqlite does not enable them
+	// by default). This is what keeps channel/source deletion from orphaning
+	// child rows.
+	dsn := path
+	if strings.Contains(dsn, "?") {
+		dsn += "&_pragma=foreign_keys(1)"
+	} else {
+		dsn += "?_pragma=foreign_keys(1)"
+	}
+
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
@@ -125,6 +136,11 @@ func Open(ctx context.Context, path string) (*DB, error) {
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 
+	// Belt-and-suspenders: ensure the pragma is active on the live connection.
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	}
+
 	db := &DB{conn}
 	if err := db.migrate(ctx); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
@@ -134,6 +150,22 @@ func Open(ctx context.Context, path string) (*DB, error) {
 }
 
 func (db *DB) migrate(ctx context.Context) error {
+	// Schema manipulation (notably the sources-table recreation, which renames
+	// and drops tables) must run with foreign keys disabled AND legacy_alter_table
+	// enabled. Otherwise modern SQLite rewrites the foreign keys of referencing
+	// tables (e.g. outputs) onto the temporary renamed table and breaks
+	// subsequent inserts. Restore both afterwards.
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+		return fmt.Errorf("disable foreign keys for migration: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA legacy_alter_table = ON"); err != nil {
+		return fmt.Errorf("enable legacy alter table for migration: %w", err)
+	}
+	defer func() {
+		db.ExecContext(ctx, "PRAGMA legacy_alter_table = OFF")
+		db.ExecContext(ctx, "PRAGMA foreign_keys = ON")
+	}()
+
 	for i, m := range migrations {
 		if _, err := db.ExecContext(ctx, m); err != nil {
 			return fmt.Errorf("migration %d: %w", i, err)
