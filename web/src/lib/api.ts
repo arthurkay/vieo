@@ -1,4 +1,4 @@
-import type { Channel, Source, Output, Job, JobLog, User, Schedule, Export, TimelineEvent, V4L2Device, DiscoveryResponse, CameraStatusResponse } from '@/types'
+import type { Channel, Source, Output, Job, JobLog, User, Schedule, Export, TimelineEvent, V4L2Device, DiscoveryResponse, CameraStatusResponse, M3UChannelResponse } from '@/types'
 
 const BASE = '/api'
 
@@ -166,5 +166,12 @@ export const api = {
     status: () =>
       request<CameraStatusResponse>('/cameras/status'),
     snapshotUrl: (id: number) => `/api/cameras/${id}/snapshot`,
+  },
+
+  browse: {
+    channels: () =>
+      request<M3UChannelResponse>('/browse/channels'),
+    streamUrl: (url: string) =>
+      `/api/browse/stream?url=${encodeURIComponent(url)}`,
   },
 }

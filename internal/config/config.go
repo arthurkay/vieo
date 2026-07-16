@@ -22,6 +22,7 @@ type Config struct {
 	Watermark   bool
 	JWTSecret   string
 	AuthEnabled bool
+	M3UFile     string
 }
 
 func Load() (*Config, error) {
@@ -37,6 +38,7 @@ func Load() (*Config, error) {
 	flag.BoolVar(&c.Watermark, "watermark", envBool("VIEO_WATERMARK", true), "Enable watermark overlay on video streams")
 	flag.StringVar(&c.JWTSecret, "jwt-secret", envStr("VIEO_JWT_SECRET", ""), "JWT signing secret (auto-generated if empty)")
 	flag.BoolVar(&c.AuthEnabled, "auth", envBool("VIEO_AUTH_ENABLED", true), "Enable authentication")
+	flag.StringVar(&c.M3UFile, "m3u-file", envStr("VIEO_M3U_FILE", ""), "Path to an M3U channel playlist file for public browsing")
 	flag.Parse()
 
 	if c.JWTSecret == "" {

@@ -203,3 +203,16 @@ export interface CameraStatusResponse {
   cameras: CameraStatus[]
   count: number
 }
+
+export interface M3UChannel {
+  name: string
+  url: string
+  tvg_id: string
+  resolution: string
+  geo_blocked: boolean
+}
+
+export interface M3UChannelResponse {
+  channels: M3UChannel[]
+  count: number
+}

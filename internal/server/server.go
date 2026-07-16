@@ -11,16 +11,18 @@ import (
 
 	"github.com/arthur/vieo/internal/config"
 	"github.com/arthur/vieo/internal/job"
+	"github.com/arthur/vieo/internal/media"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 )
 
 type Server struct {
-	Config  *config.Config
-	DB      *sql.DB
-	Manager *job.Manager
-	Router  *chi.Mux
-	http    *http.Server
+	Config   *config.Config
+	DB       *sql.DB
+	Manager  *job.Manager
+	M3UCache *media.M3UCache
+	Router   *chi.Mux
+	http     *http.Server
 }
 
 func New(cfg *config.Config, db *sql.DB, mgr *job.Manager) *Server {
@@ -28,6 +30,10 @@ func New(cfg *config.Config, db *sql.DB, mgr *job.Manager) *Server {
 		Config:  cfg,
 		DB:      db,
 		Manager: mgr,
+	}
+
+	if cfg.M3UFile != "" {
+		s.M3UCache = media.NewM3UCache(cfg.M3UFile, 60*time.Second)
 	}
 
 	s.Router = chi.NewRouter()

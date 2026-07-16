@@ -111,6 +111,8 @@ func (s *Server) setupRoutes() {
 
 	// Public routes
 	s.Router.Get("/api/stream/{id}/*", handler.StreamHLS(s.Config.DataDir))
+	s.Router.Get("/api/browse/channels", handler.ListBrowseChannels(s.M3UCache))
+	s.Router.Get("/api/browse/stream", handler.ProxyStream())
 	s.Router.HandleFunc("/*", s.serveFrontend)
 
 	// Protected routes (auth required, any role)

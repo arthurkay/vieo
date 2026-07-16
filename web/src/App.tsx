@@ -16,6 +16,8 @@ import Users from './pages/Users'
 import Recordings from './pages/Recordings'
 import Multiview from './pages/Multiview'
 import Cameras from './pages/Cameras'
+import BrowseChannels from './pages/BrowseChannels'
+import BrowsePlayer from './pages/BrowsePlayer'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -55,6 +57,18 @@ function AppRoutes() {
                 <Player />
               </ErrorBoundary>
             </div>
+          } />
+          <Route path="/browse" element={
+            <main className="flex-1 overflow-y-auto">
+              <BrowseChannels />
+            </main>
+          } />
+          <Route path="/browse/:channelIndex" element={
+            <main className="flex-1 overflow-y-auto">
+              <ErrorBoundary key={location.key}>
+                <BrowsePlayer />
+              </ErrorBoundary>
+            </main>
           } />
           <Route path="*" element={
             <ProtectedRoute>

@@ -18,6 +18,7 @@ import {
   Clapperboard,
   LayoutGrid,
   Camera,
+  Tv,
 } from 'lucide-react'
 
 export function SidebarToggle({ onClick }: { onClick: () => void }) {
@@ -45,6 +46,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   const links = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/channels', label: 'Channels', icon: Radio },
+    { to: '/browse', label: 'Browse', icon: Tv },
     ...(isAdmin ? [
       { to: '/cameras', label: 'Cameras', icon: Camera },
       { to: '/sources', label: 'Sources', icon: Video },

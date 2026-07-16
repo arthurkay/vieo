@@ -9,8 +9,15 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from '@/components/ui/dropdown-menu'
 import { Separator } from '@/components/ui/separator'
-import { ArrowLeft, Radio, Activity, Clock, Calendar, Bookmark, Trash2, MapPin, Pencil, Download } from 'lucide-react'
+import { ArrowLeft, Radio, Activity, Clock, Calendar, Bookmark, Trash2, MapPin, Pencil, Download, ChevronDown, Tv } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { useWebSocket } from '@/hooks/use-websocket'
 import type { JobEvent, TimelineEvent } from '@/types'
@@ -55,6 +62,23 @@ export default function Player() {
     queryKey: ['sources'],
     queryFn: () => api.sources.list(),
   })
+
+  const { data: outputs } = useQuery({
+    queryKey: ['outputs'],
+    queryFn: () => api.outputs.list(),
+  })
+
+  // Build a list of switchable streams, labelled by source name.
+  const streamOptions = useMemo(() => {
+    const srcMap = new Map((sources ?? []).map((s) => [s.id, s]))
+    return (outputs ?? [])
+      .map((o) => {
+        const src = srcMap.get(o.source_id)
+        const label = src?.name || `Source #${o.source_id}`
+        return { outputId: o.id, label }
+      })
+      .sort((a, b) => a.outputId - b.outputId)
+  }, [outputs, sources])
 
   const job = useMemo(() => {
     // For recorded content the job is stopped/completed, so don't exclude it —
@@ -222,13 +246,31 @@ export default function Player() {
           <span className="hidden sm:inline">Back</span>
         </Button>
         <Separator orientation="vertical" className="h-6" />
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <Radio className="h-4 w-4 text-muted-foreground shrink-0" />
-          <h1 className="text-base sm:text-lg font-semibold truncate">
-            {job ? (job.source_id ? `Stream #${job.source_id}` : 'Stream') : 'Player'}
-          </h1>
-          {job?.status && <Badge variant={job.status}>{job.status}</Badge>}
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-2 sm:gap-3 min-w-0 rounded-md px-2 py-1 hover:bg-muted transition-colors">
+              <Radio className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-base sm:text-lg font-semibold truncate">
+                {job ? (job.source_id ? `Stream #${job.source_id}` : 'Stream') : 'Player'}
+              </span>
+              {job?.status && <Badge variant={job.status}>{job.status}</Badge>}
+              <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-80 w-72 overflow-y-auto">
+            <DropdownMenuRadioGroup value={String(id)} onValueChange={(v) => navigate(`/player/${v}`)}>
+              {streamOptions.map((opt) => (
+                <DropdownMenuRadioItem key={opt.outputId} value={String(opt.outputId)}>
+                  <span className="flex items-center gap-2 min-w-0">
+                    <Tv className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="truncate">{opt.label}</span>
+                    <span className="ml-auto text-xs text-muted-foreground shrink-0">#{opt.outputId}</span>
+                  </span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <div className="ml-auto flex items-center gap-2">
           {showJump && !isLive && (

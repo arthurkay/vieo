@@ -14,6 +14,8 @@ import {
   Subtitles,
   Scissors,
   AudioLines,
+  Ban,
+  RotateCcw,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -46,6 +48,8 @@ interface VideoPlayerProps {
   showExportButton?: boolean
   streamType?: 'audio_video' | 'audio_only' | 'video_only'
   outputId?: number
+  autoPlay?: boolean
+  onPlaying?: () => void
 }
 
 function formatTime(seconds: number): string {
@@ -151,6 +155,8 @@ export default function VideoPlayer({
   showExportButton = false,
   streamType,
   outputId,
+  autoPlay = false,
+  onPlaying,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -167,6 +173,8 @@ export default function VideoPlayer({
   const hoverThrottleRef = useRef(0)
   const seekingRef = useRef(false)
   const controlsVisibleRef = useRef(true)
+  const autoPlayRef = useRef(autoPlay)
+  const onPlayingRef = useRef(onPlaying)
 
   const [playing, setPlaying] = useState(false)
   const [buffering, setBuffering] = useState(true)
@@ -179,6 +187,9 @@ export default function VideoPlayer({
   const [controlsVisible, setControlsVisible] = useState(true)
   const [seeking, setSeeking] = useState(false)
   const [seekValue, setSeekValue] = useState([0])
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [retryNonce, setRetryNonce] = useState(0)
+  const [soundBlocked, setSoundBlocked] = useState(false)
 
   const [filmstripMeta, setFilmstripMeta] = useState<FilmstripMeta | null>(null)
   const [filmstripImages, setFilmstripImages] = useState<Map<string, HTMLImageElement>>(new Map())
@@ -195,6 +206,8 @@ export default function VideoPlayer({
   const [draggingHandle, setDraggingHandle] = useState<'start' | 'end' | null>(null)
 
   isLiveRef.current = isLive
+  autoPlayRef.current = autoPlay
+  onPlayingRef.current = onPlaying
   seekingRef.current = seeking
 
   const speeds = isLive ? ALL_SPEEDS.filter((s) => s <= 1) : ALL_SPEEDS
@@ -285,6 +298,17 @@ export default function VideoPlayer({
 
         setBuffering(false)
 
+        if (autoPlayRef.current) {
+          // Try unmuted autoplay first so sound comes through; if the browser
+          // blocks it, fall back to muted playback and surface a sound hint.
+          videoEl.muted = false
+          videoEl.play().catch(() => {
+            videoEl.muted = true
+            setSoundBlocked(true)
+            videoEl.play().catch(() => {})
+          })
+        }
+
         if (isLive) {
           lastDurationUpdateRef.current = Date.now()
           if (durationInterval) clearInterval(durationInterval)
@@ -321,9 +345,20 @@ export default function VideoPlayer({
         if (!hls) return
         if (data.fatal) {
           switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
+            case Hls.ErrorTypes.NETWORK_ERROR: {
+              // If the upstream explicitly refused (e.g. 401/403/451), retrying
+              // is futile — surface a clear "channel unavailable" message.
+              const status = (data as any).response?.code
+              if (status === 401 || status === 403 || status === 451) {
+                setErrorMsg(
+                  'This channel is unavailable. The stream source refused access (blocked or geo-restricted).',
+                )
+                setBuffering(false)
+                break
+              }
               hls.startLoad()
               break
+            }
             case Hls.ErrorTypes.MEDIA_ERROR:
               hls.recoverMediaError()
               break
@@ -339,6 +374,10 @@ export default function VideoPlayer({
                 newHls.attachMedia(videoEl)
                 attachHlsEvents(newHls)
                 recoveryCountRef.current = 0
+                setErrorMsg(
+                  'This stream could not be played. The source may be offline or unsupported.',
+                )
+                setBuffering(false)
               }
               break
           }
@@ -355,6 +394,14 @@ export default function VideoPlayer({
       attachHlsEvents(hls)
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = streamUrl
+      if (autoPlayRef.current) {
+        video.muted = false
+        video.play().catch(() => {
+          video.muted = true
+          setSoundBlocked(true)
+          video.play().catch(() => {})
+        })
+      }
     }
 
     return () => {
@@ -366,13 +413,16 @@ export default function VideoPlayer({
       hlsRef.current = null
       current?.destroy()
     }
-  }, [streamUrl, isLive])
+  }, [streamUrl, isLive, retryNonce])
 
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
-    const onPlay = () => setPlaying(true)
+    const onPlay = () => {
+      setPlaying(true)
+      onPlaying?.()
+    }
     const onPause = () => setPlaying(false)
     const onTimeUpdate = () => {
       if (!seekingRef.current) {
@@ -394,9 +444,13 @@ export default function VideoPlayer({
     const onVolumeChange = () => {
       setVolume(video.volume)
       setMuted(video.muted)
+      if (!video.muted) setSoundBlocked(false)
     }
     const onWaiting = () => setBuffering(true)
-    const onPlaying = () => setBuffering(false)
+    const onPlaying = () => {
+      setBuffering(false)
+      onPlayingRef.current?.()
+    }
     const onDurationChange = () => {
       const d = video.duration
       // Update when hls.js resolves the full timeline after MANIFEST_PARSED
@@ -629,6 +683,13 @@ export default function VideoPlayer({
     }
   }
 
+  function retryPlayback() {
+    setErrorMsg(null)
+    setBuffering(true)
+    recoveryCountRef.current = 0
+    setRetryNonce((n) => n + 1)
+  }
+
   function captureScreenshot() {
     const video = videoRef.current
     if (!video) return
@@ -830,6 +891,40 @@ export default function VideoPlayer({
         <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
           <AudioLines className="h-16 w-16 text-white/20" />
         </div>
+      )}
+
+      {/* Error overlay */}
+      {errorMsg && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/85 px-6 text-center">
+          <Ban className="h-12 w-12 text-red-500" />
+          <p className="max-w-md text-sm text-white/90">{errorMsg}</p>
+          <button
+            onClick={(e) => { e.stopPropagation(); retryPlayback() }}
+            className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/20 transition-colors"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Sound-blocked hint — autoplay was allowed only when muted */}
+      {soundBlocked && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            const v = videoRef.current
+            if (v) {
+              v.muted = false
+              v.play().catch(() => {})
+            }
+            setSoundBlocked(false)
+          }}
+          className="absolute bottom-16 left-1/2 -translate-x-1/2 z-40 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white hover:bg-black/80 transition-colors"
+        >
+          <Volume2 className="h-4 w-4" />
+          Click to enable sound
+        </button>
       )}
 
       {/* Center loading/play indicator */}
